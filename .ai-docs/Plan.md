@@ -80,6 +80,7 @@ Stagewise plan for BloodWorks Health (symptom-app). Status legend: done / active
 - Hide sidebar links for sections that are not rendered.
 - PWA install prompt after a completed analysis, 30-day dismissal.
 - Ctrl/Cmd+V image upload on `/analyze`, excluding the Sai panel.
+- Colorful multi-page PDF report download on `/analyze` (jsPDF + jspdf-autotable): deep-green header band, per-system score rings, biomarker table with in-range/out-of-range status, definitive diagnosis + prescription, care actions L1–L3, supplement plan, and optional raw OCR text. Replaces the plain-text download.
 - Careers application form with three fields and a pre-addressed mailto.
 - Hybrid AI vision fallback for unreadable images, opt-in only.
 

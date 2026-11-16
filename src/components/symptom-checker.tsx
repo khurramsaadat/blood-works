@@ -7,9 +7,9 @@ import { parseLabReport, type LabResult } from "@/lib/lab";
 import {
   buildReportText,
   downloadText,
-  reportStamp,
   shareText,
 } from "@/lib/report-export";
+import { downloadPdfReport } from "@/lib/pdf-report";
 import {
   clearAllSessions,
   loadSessions,
@@ -488,14 +488,14 @@ export default function SymptomChecker() {
 
   const exportReport = async (mode: "download" | "share") => {
     if (!lab) return;
-    const text = buildReportText(lab, ocr.status === "done" ? ocr.text : undefined);
     if (mode === "download") {
-      downloadText(`bloodworks-analysis_${reportStamp()}.txt`, text);
+      downloadPdfReport(lab, ocr.status === "done" ? ocr.text : undefined);
       setToast("Report downloaded");
-    } else {
-      const r = await shareText(text, "BloodWorks Health – report analysis");
-      setToast(r === "shared" ? "Report shared" : "Report copied to clipboard");
+      return;
     }
+    const text = buildReportText(lab, ocr.status === "done" ? ocr.text : undefined);
+    const r = await shareText(text, "BloodWorks Health – report analysis");
+    setToast(r === "shared" ? "Report shared" : "Report copied to clipboard");
   };
 
   const runOcr = useCallback(async (file: File, image: string) => {
