@@ -1,0 +1,4 @@
+[build.environment]
+  # IFM_API_KEY is a server-only key read by /api/assistant at runtime. Next inlines
+  # server env vars into the build output, so the value is expected to be there.
+  SECRETS_SCAN_OMIT_KEYS = "IFM_API_KEY,IFM_BASE_URL,IFM_MODEL"

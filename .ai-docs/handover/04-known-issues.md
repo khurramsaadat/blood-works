@@ -8,6 +8,7 @@
 ## Environment specifics
 - Dev port is **3004** (`pnpm dev` runs `npx kill-port 3004 && next dev -p 3004`). The owner's other app holds 3000. Do not start on 3000.
 - `.env.local` (gitignored) must contain `IFM_API_KEY`; `IFM_BASE_URL` and `IFM_MODEL` are optional with sane defaults.
+- Netlify secrets scanning blocks the build when `IFM_API_KEY` is set as a build environment variable, because Next inlines server env vars into `.next/server/chunks`. `netlify.toml` whitelists the three IFM keys via `SECRETS_SCAN_OMIT_KEYS`. The value is never sent to the client – it stays in the server bundle, which is the intended exposure.
 - PowerShell: chain with `;` not `&&`. Inline `curl -d` JSON gets mangled; write the JSON to a file and use `--data-binary "@file.json"`.
 - PowerShell `Set-Content -Encoding UTF8` writes a **BOM**, and the Tailwind Turbopack loader rejects `package.json` containing one. Edit JSON files with the editor tools, or write UTF-8 without BOM explicitly. If it happens, strip bytes `EF BB BF` and restart the dev server (Turbopack caches the parse error).
 - `cacheComponents: true` forbids reading the clock in server components. The dynamic year is isolated in the client `site/copyright-year.tsx`, which resolves the year after mount; the navbar and footer both use it. Any new server component that needs `new Date()` must be a client component or wrapped appropriately.

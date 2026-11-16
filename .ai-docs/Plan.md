@@ -65,6 +65,7 @@ Stagewise plan for BloodWorks Health (symptom-app). Status legend: done / active
 
 ## Stage 10: Visual QA and theme alignment – done
 - Analyzer, Sai panel, Markdown and score rings recolored from legacy blue/gray to theme tokens (`bg-accent`, `text-accent-deep`, `bg-soft`, `bg-card`, `border-border-c`, `text-foreground`, `text-muted`).
+- Netlify deploy fix: `netlify.toml` whitelists `IFM_API_KEY` (and the two optional IFM vars) via `SECRETS_SCAN_OMIT_KEYS`, since the key is intentionally inlined into the server bundle by Next.
 - Added a fixed deep token `--brand-deep` so CTA bands, logo marks and avatar chips keep white-text contrast in dark mode instead of switching to the bright accent.
 - Removed the duplicate brand card from the analyzer sidebar; mobile hides the sidebar entirely when there are no saved reports.
 - Sticky offsets account for the 64 px navbar (`top-20`, Sai `h-[calc(100vh-6rem)]`).
