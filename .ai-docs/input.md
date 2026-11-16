@@ -47,6 +47,7 @@ Chronological record of every owner input and prompt that shaped this project. N
 - Careers application form: three fields (name, portfolio URL, one-line note), one form with role buttons, pre-addressed mailto with the role in the subject.
 - Scroll spy: as the report scrolls, the left panel highlights the section in view. Keep two active rows: the tool mode (Analyze a Report) and the current report section. Hide sidebar links whose section is not rendered.
 - Download report should match the website: colorful multi-page PDF with charts/graphs (per-system score rings, biomarker table), definitive diagnosis, prescription, care actions L1–L3, supplement plan, optional raw OCR text.
+- Full app bug review: review the entire app for bugs, broken interactions and inconsistent behavior across all pages. Fix anything that is not working as expected and list what was found and fixed. Then push all code to the GitHub repo (permission granted for this push only).
 
 
 ## Standing rules (from AGENTS.md)

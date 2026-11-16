@@ -2,13 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Tesseract from "tesseract.js";
+import { usePathname } from "next/navigation";
 import AssistantChat from "@/components/assistant-chat";
 import { parseLabReport, type LabResult } from "@/lib/lab";
-import {
-  buildReportText,
-  downloadText,
-  shareText,
-} from "@/lib/report-export";
+import { buildReportText, shareText } from "@/lib/report-export";
 import { downloadPdfReport } from "@/lib/pdf-report";
 import {
   clearAllSessions,
@@ -241,12 +238,14 @@ const statusLabel: Record<string, string> = {
   in: "In range",
   watch: "Watch",
   out: "Out of range",
+  none: "Not evaluated",
 };
 
 const systemBadge: Record<string, { bg: string; text: string }> = {
   in: { bg: "bg-soft", text: "text-accent-deep" },
   watch: { bg: "bg-amber-50", text: "text-amber-700" },
   out: { bg: "bg-red-50", text: "text-red-600" },
+  none: { bg: "bg-soft/50", text: "text-muted" },
 };
 
 const levelBadge: Record<string, string> = {
@@ -374,12 +373,24 @@ export default function SymptomChecker() {
   const [toast, setToast] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
+  const pathname = usePathname();
+
+  // /analyze must show the report tool and /symptoms the symptom tool, even
+  // when the user arrives from the navbar/footer while the other tab was active.
+  useEffect(() => {
+    if (pathname === "/symptoms") setTab("symptom");
+    else if (pathname === "/analyze") setTab("report");
+    window.scrollTo({ top: 0 });
+  }, [pathname]);
 
   /* ---------------- Session persistence (localStorage) ---------------- */
   const [sessions, setSessions] = useState<SavedSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const hydrated = useRef(false);
+  // Guards against interleaved OCR runs: only the most recent upload may
+  // write to the OCR/analysis state.
+  const ocrRun = useRef(0);
 
   // Hydrate the most recent session on mount (client only).
   useEffect(() => {
@@ -466,6 +477,7 @@ export default function SymptomChecker() {
   };
 
   const newOcr = (file: File) => {
+    const run = ++ocrRun.current;
     fileToDataUrl(file)
       .then((image) => {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -473,10 +485,10 @@ export default function SymptomChecker() {
         setOcr({ status: "loading", image });
         setChat([]);
         setTab("report");
-        return runOcr(file, image);
+        return runOcr(file, image, run);
       })
       .catch(() => {
-        setOcr({ status: "error", message: "Could not read this image." });
+        if (ocrRun.current === run) setOcr({ status: "error", message: "Could not read this image." });
       });
   };
 
@@ -498,7 +510,7 @@ export default function SymptomChecker() {
     setToast(r === "shared" ? "Report shared" : "Report copied to clipboard");
   };
 
-  const runOcr = useCallback(async (file: File, image: string) => {
+  const runOcr = useCallback(async (file: File, image: string, run: number) => {
     setOcr({ status: "loading", image });
     try {
       // Preprocess: upscale small photos, grayscale + boost contrast so OCR
@@ -526,14 +538,16 @@ export default function SymptomChecker() {
       }
       const { data } = await Tesseract.recognize(ocrInput, "eng", {
         logger: (m) => {
-          if (m.status === "recognizing text") {
+          if (m.status === "recognizing text" && ocrRun.current === run) {
             setOcr({ status: "progress", pct: Math.round(m.progress * 100), image });
           }
         },
       });
+      if (ocrRun.current !== run) return; // a newer upload superseded this run
       setOcr({ status: "done", text: data.text.trim(), image });
       setAnalysis(analyzeAll(data.text));
     } catch (e) {
+      if (ocrRun.current !== run) return;
       setOcr({ status: "error", message: e instanceof Error ? e.message : "Could not read this image." });
     }
   }, []);
@@ -559,7 +573,11 @@ export default function SymptomChecker() {
   const clearChat = useCallback(() => setChat([]), []);
 
   const overallScore = lab
-    ? Math.round(lab.systems.reduce((sum, s) => sum + s.score, 0) / lab.systems.length)
+    ? (() => {
+        const scored = lab.systems.filter((s) => s.status !== "none");
+        if (scored.length === 0) return null;
+        return Math.round(scored.reduce((sum, s) => sum + s.score, 0) / scored.length);
+      })()
     : null;
   const outOfRange = lab
     ? lab.rows.filter((r) => r.status !== "normal").length
@@ -678,7 +696,7 @@ export default function SymptomChecker() {
                         deleteSession(s.id);
                       }}
                       title="Delete this report"
-                      className="h-6 w-6 rounded-md text-muted/60 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 flex items-center justify-center shrink-0"
+                      className="h-6 w-6 rounded-md text-muted/60 hover:text-red-500 hover:bg-red-50 flex items-center justify-center shrink-0 sm:opacity-0 sm:group-hover:opacity-100"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M3 6h18 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
@@ -943,7 +961,7 @@ export default function SymptomChecker() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      setAnalysis(analyzeAll(input));
+                      setAnalysis(input.trim() ? analyzeAll(input) : null);
                     }
                   }}
                   rows={3}
@@ -951,7 +969,7 @@ export default function SymptomChecker() {
                   className="w-full bg-soft border border-border-c rounded-xl p-4 text-sm placeholder:text-muted/70 focus:outline-none focus:border-accent resize-none"
                 />
                 <button
-                  onClick={() => setAnalysis(analyzeAll(input))}
+                  onClick={() => setAnalysis(input.trim() ? analyzeAll(input) : null)}
                   className="w-full bg-accent hover:bg-brand-deep text-white font-semibold rounded-xl py-3 text-sm"
                 >
                   Check Symptoms
@@ -960,7 +978,7 @@ export default function SymptomChecker() {
             )}
 
             {/* ============ HEALTH CATEGORY OVERVIEW ============ */}
-            {lab && (
+            {tab === "report" && lab && (
               <section id="sec-overview" className="scroll-mt-5 w-full bg-card border border-border-c rounded-2xl shadow-sm p-6">
                 <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
                   <h2 className="text-2xl font-medium text-foreground">
@@ -1015,7 +1033,7 @@ export default function SymptomChecker() {
             )}
 
             {/* ============ BIOMARKERS ============ */}
-            {lab && (
+            {tab === "report" && lab && (
               <section id="sec-biomarkers" className="scroll-mt-5">
                 <h2 className="text-2xl font-medium text-foreground px-1 mb-3">Biomarkers</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1074,7 +1092,7 @@ export default function SymptomChecker() {
             )}
 
             {/* ============ INSIGHTS ============ */}
-            {lab && lab.findings.length > 0 && (
+            {tab === "report" && lab && lab.findings.length > 0 && (
               <section id="sec-insights" className="scroll-mt-5">
                 <h2 className="text-2xl font-medium text-foreground px-1 mb-3">Insights</h2>
                 <div className="space-y-3">
@@ -1094,7 +1112,7 @@ export default function SymptomChecker() {
             )}
 
             {/* ============ DEFINITIVE DIAGNOSIS + PRESCRIPTION (lab) ============ */}
-            {lab?.primary && (
+            {tab === "report" && lab?.primary && (
               <div id="sec-diagnosis" className="scroll-mt-5">
                 <Card
                   title="Definitive Diagnosis"
@@ -1140,7 +1158,7 @@ export default function SymptomChecker() {
             )}
 
             {/* ============ CARE ACTIONS ============ */}
-            {lab && lab.actions.length > 0 && (
+            {tab === "report" && lab && lab.actions.length > 0 && (
               <section id="sec-care" className="scroll-mt-5">
                 <h2 className="text-2xl font-medium text-foreground px-1 mb-3">Care Actions</h2>
                 <div className="space-y-2">
@@ -1167,7 +1185,7 @@ export default function SymptomChecker() {
             )}
 
             {/* ============ SUPPLEMENT PLAN ============ */}
-            {lab && lab.supplements.length > 0 && (
+            {tab === "report" && lab && lab.supplements.length > 0 && (
               <div id="sec-supplements" className="scroll-mt-5">
                 <Card title="Morning Stack · Supplement Plan" meta={`${lab.supplements.length} items`}>
                   <table className="w-full text-sm">
@@ -1194,7 +1212,7 @@ export default function SymptomChecker() {
               </div>
             )}
 
-            {lab && !lab.primary && (
+            {tab === "report" && lab && !lab.primary && (
               <section className="w-full bg-card border border-accent/30 rounded-2xl shadow-sm p-6">
                 <div className="flex items-center gap-3">
                   <span className="h-9 w-9 rounded-full bg-soft flex items-center justify-center text-accent-deep font-bold">
@@ -1214,7 +1232,7 @@ export default function SymptomChecker() {
             )}
 
             {/* ============ SYMPTOM-ONLY RESULT ============ */}
-            {showingLab === false && symptom?.kind === "match" && (
+            {tab === "symptom" && showingLab === false && symptom?.kind === "match" && (
               <Card
                 title="Definitive Diagnosis"
                 meta={`ICD-10: ${symptom.diagnosis.icd10} · Confidence ${symptom.score}%`}
@@ -1261,7 +1279,7 @@ export default function SymptomChecker() {
               </Card>
             )}
 
-            {analysis && !lab && symptom?.kind === "inconclusive" && (
+            {tab === "symptom" && analysis && !lab && symptom?.kind === "inconclusive" && (
               <section className="w-full bg-card border border-border-c rounded-2xl shadow-sm p-6">
                 <p className="text-sm text-muted">
                   No lab values or conditions in the knowledge base match that input. For reports,
@@ -1270,15 +1288,28 @@ export default function SymptomChecker() {
               </section>
             )}
 
-            {!analysis && (
+            {!analysis && tab === "report" && (
               <section className="w-full bg-card border border-border-c rounded-2xl shadow-sm p-8 text-center">
                 <div className="flex flex-col items-center gap-3">
                   <span className="h-12 w-12 rounded-2xl bg-soft text-accent-deep flex items-center justify-center">
                     <Icon d={ICONS.report} className="!w-6 !h-6" />
                   </span>
                   <p className="text-sm text-muted max-w-sm leading-relaxed">
-                    Upload a report screenshot or check symptoms to see your health category
-                    overview, definitive diagnosis, care actions and supplement plan here.
+                    Upload a report screenshot to see your health category overview, definitive
+                    diagnosis, care actions and supplement plan here.
+                  </p>
+                </div>
+              </section>
+            )}
+            {!analysis && tab === "symptom" && (
+              <section className="w-full bg-card border border-border-c rounded-2xl shadow-sm p-8 text-center">
+                <div className="flex flex-col items-center gap-3">
+                  <span className="h-12 w-12 rounded-2xl bg-soft text-accent-deep flex items-center justify-center">
+                    <Icon d={ICONS.symptom} className="!w-6 !h-6" />
+                  </span>
+                  <p className="text-sm text-muted max-w-sm leading-relaxed">
+                    Describe your symptoms above and tap Check Symptoms to see a definitive read
+                    with next steps.
                   </p>
                 </div>
               </section>

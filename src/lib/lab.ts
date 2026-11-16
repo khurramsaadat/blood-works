@@ -40,7 +40,7 @@ export type LabSystem = {
   id: string;
   name: string;
   score: number; // 0–100
-  status: "in" | "watch" | "out";
+  status: "in" | "watch" | "out" | "none";
   abnormal: number;
   total: number;
 };
@@ -1543,6 +1543,9 @@ export function parseLabReport(text: string): LabResult | null {
   /* System scores */
   const systems: LabSystem[] = SYSTEM_DEFS.map((def) => {
     const sysRows = rows.filter((r) => r.test.system === def.id);
+    if (sysRows.length === 0) {
+      return { id: def.id, name: def.name, score: 0, status: "none", abnormal: 0, total: 0 };
+    }
     const abnormal = sysRows.filter((r) => r.status !== "normal").length;
     let score = 100;
     for (const r of sysRows) {

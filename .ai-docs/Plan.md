@@ -80,9 +80,23 @@ Stagewise plan for BloodWorks Health (symptom-app). Status legend: done / active
 - Hide sidebar links for sections that are not rendered.
 - PWA install prompt after a completed analysis, 30-day dismissal.
 - Ctrl/Cmd+V image upload on `/analyze`, excluding the Sai panel.
-- Colorful multi-page PDF report download on `/analyze` (jsPDF + jspdf-autotable): deep-green header band, per-system score rings, biomarker table with in-range/out-of-range status, definitive diagnosis + prescription, care actions L1–L3, supplement plan, and optional raw OCR text. Replaces the plain-text download.
+- Colorful multi-page PDF report download on `/analyze` (jsPDF + jspdf-autotable): deep-green header band, per-system score rings, biomarker table with in-range/out-of-range status, definitive diagnosis + prescription, care actions L1–L3, supplement plan, and optional raw OCR text. Replaces the plain-text download. **Done in Stage 12.**
 - Careers application form with three fields and a pre-addressed mailto.
 - Hybrid AI vision fallback for unreadable images, opt-in only.
+
+## Stage 12: Full app bug review – done
+- **PDF ring charts were blank.** jsPDF 4.2.1 has no SVG/image-svg rasterizer (verified: no `image/svg`/`rasterize` in the build; `doc.circle` is a full-ellipse shortcut with no arc angles). Rings now rendered via an offscreen 2x canvas → PNG data URL.
+- **PDF overflow.** Systems page had no page breaks (8 systems overflowed one A4 page); biomarker table `startY` was a hardcoded `20`; raw OCR text could run off the page. All sections now use an `ensureSpace()` page-break helper and the autotable's `lastAutoTable.finalY` cursor.
+- **Unevaluated systems showed a fake 100% green ring.** `lab.ts` now returns `status: "none"`, score 0, total 0 for systems with no values; UI shows a "Not evaluated" badge and a dashed ring; overall score averages only evaluated systems.
+- **Tab/section mismatch.** Lab result sections were rendered regardless of the active tab, so "Check Symptoms" with a loaded report showed the stale report and hid the symptom result. All lab sections gated to the report tab, symptom result to the symptom tab, plus tab-aware empty states.
+- **Wrong tab after navigating.** `/analyze` could open on the symptom tab (and vice versa) when arriving from navbar/footer while the other tab was active; now a `usePathname` effect syncs the tab and scrolls to top.
+- **Concurrent OCR interleaving.** Two quick uploads let a slower stale run overwrite the newer state; an `ocrRun` counter ref now guards every OCR state write.
+- **Mobile session delete invisible.** Button relied on `group-hover` opacity (no hover on touch); now always visible on mobile, hover-reveal on desktop.
+- **Empty symptom submit** produced a misleading "no values found" state; empty input now clears to the empty state.
+- **Service worker in dev** could cache Turbopack assets; registration stays production-only (already gated, comment added).
+- **Copy drift vs engine.** Engine scores 8 systems (Heart, Inflammation, Metabolic, Thyroid, Hormonal, Nutritional, Liver, Kidney); homepage stats ("9 body systems"), services copy, hero mock bars and how-it-works copy said 9 / endocrine / immune / hepatic / renal / hematologic. All aligned.
+- Dead code: unused `downloadText` import removed from `symptom-checker.tsx`.
+- Verified: `tsc --noEmit` clean, `pnpm build` 15/15 routes.
 
 ## Cleanup queue
 - No leftover `ocr-*.mjs`, `ocr-*.txt`, `verify-*.mjs` or `eng.traineddata` in the repo. Removed in Stage 10.

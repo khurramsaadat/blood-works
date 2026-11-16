@@ -24,23 +24,46 @@ function labStatusToPdf(status: string): Status {
   return status === "normal" ? "normal" : status === "low" || status === "high" ? "out" : "watch";
 }
 
-/* ---------------- Ring chart (SVG → data URL) ---------------- */
+/* ---------------- Ring chart (canvas → PNG data URL, jsPDF-safe) ---------------- */
 
-function ringSvg(pct: number, color: string): string {
-  const size = 64;
-  const stroke = 8;
+function ringPng(pct: number, color: string): string {
+  const size = 128; // 2x the 64px placement size for crispness
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
   const cx = size / 2;
   const cy = size / 2;
-  const r = cx - stroke / 2 - 2;
-  const dash = (pct / 100) * 2 * Math.PI * r;
-  const gap = 2 * Math.PI * r - dash;
-  return `data:image/svg+xml,${encodeURIComponent(
-    `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${LINE}" stroke-width="${stroke}" stroke-linecap="round"/>
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round"
-        stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>
-      <text x="${cx}" y="${cy + 5}" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="${INK}" text-anchor="middle">${Math.round(pct)}%</text>
-    </svg>`)}`;
+  const r = size / 2 - 14;
+  ctx.lineCap = "round";
+  ctx.lineWidth = 18;
+  // Track
+  ctx.strokeStyle = LINE;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  // Value arc: 12 o'clock, clockwise
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (Math.min(100, Math.max(0, pct)) / 100) * Math.PI * 2, false);
+  ctx.stroke();
+  // Center label
+  ctx.fillStyle = INK;
+  ctx.font = "bold 30px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`${Math.round(pct)}%`, cx, cy + 1);
+  return canvas.toDataURL("image/png");
+}
+
+/** Page break helper: return the y position, starting a new page if needed. */
+function ensureSpace(doc: jsPDF, y: number, need: number): number {
+  if (y + need > doc.internal.pageSize.getHeight() - 40) {
+    doc.addPage();
+    return 20;
+  }
+  return y;
 }
 
 /* ---------------- Page builders ---------------- */
@@ -80,50 +103,74 @@ function buildSystemsPage(doc: jsPDF, lab: LabResult): number {
   y = sectionHeading(doc, y, "SYSTEM HEALTH SCORES");
 
   const colW = (doc.internal.pageSize.getWidth() - 32) / 3;
-  for (let i = 0; i < lab.systems.length; i++) {
-    const s = lab.systems[i];
-    const col = i % 3;
-    const row = Math.floor(i / 3);
-    const x = 16 + col * colW + 10;
-    const baseY = y + row * 56;
+  const cellH = 58;
+  const rowsCount = Math.ceil(lab.systems.length / 3);
+  for (let r = 0; r < rowsCount; r++) {
+    y = ensureSpace(doc, y, cellH);
+    const baseY = y;
+    for (let c = 0; c < 3; c++) {
+      const i = r * 3 + c;
+      if (i >= lab.systems.length) break;
+      const s = lab.systems[i];
+      const x = 16 + c * colW + 10;
+      const empty = s.total === 0;
+      const status: Status = s.status === "in" ? "normal" : s.status === "watch" ? "watch" : "out";
+      const color = STATUS_COLOR[status];
 
-    const status: Status = s.status === "in" ? "normal" : s.status === "watch" ? "watch" : "out";
-    const color = STATUS_COLOR[status];
-    const img = ringSvg(s.score, color);
-
-    doc.addImage(img, "PNG", x, baseY, 40, 40);
-    doc.setFontSize(10);
-    doc.setTextColor(INK);
-    doc.setFont("helvetica", "bold");
-    doc.text(s.name, x + 46, baseY + 10, { maxWidth: colW - 56 });
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(MUTED);
-    doc.text(`${s.abnormal} of ${s.total} out of range  ·  ${status.toUpperCase()}`, x + 46, baseY + 22);
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(color);
-    doc.text(`${s.score}%`, x + 46, baseY + 36);
+      if (empty) {
+        doc.setDrawColor(LINE);
+        doc.setLineWidth(0.7);
+        doc.roundedRect(x, baseY, 40, 40, 4, 4, "S");
+        doc.setFontSize(7.5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(MUTED);
+        doc.text("NOT", x + 20, baseY + 18, { align: "center" });
+        doc.text("EVALUATED", x + 20, baseY + 26, { align: "center" });
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.text(s.name, x + 46, baseY + 10, { maxWidth: colW - 56 });
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(MUTED);
+        doc.text("No values for this system", x + 46, baseY + 22);
+        doc.text("–", x + 46, baseY + 36);
+      } else {
+        const img = ringPng(s.score, color);
+        if (img) doc.addImage(img, "PNG", x, baseY, 40, 40);
+        doc.setFontSize(10);
+        doc.setTextColor(INK);
+        doc.setFont("helvetica", "bold");
+        doc.text(s.name, x + 46, baseY + 10, { maxWidth: colW - 56 });
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(MUTED);
+        doc.text(`${s.abnormal} of ${s.total} out of range  ·  ${status.toUpperCase()}`, x + 46, baseY + 22);
+        doc.setFontSize(16);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(color);
+        doc.text(`${s.score}%`, x + 46, baseY + 36);
+      }
+    }
+    y = baseY + cellH + 8;
   }
-
-  y += Math.ceil(lab.systems.length / 3) * 56 + 16;
   return y;
 }
 
-function buildBiomarkersPage(doc: jsPDF, lab: LabResult): void {
+function buildBiomarkersPage(doc: jsPDF, lab: LabResult, startY: number): number {
   const header = [["Test", "Value", "Unit", "Reference", "Status"]];
   const rows = lab.rows.map((r) => [
     r.test.label,
     String(r.value),
     r.test.unit,
-    `${r.test.low}–${r.test.high}`,
+    `${r.test.low}\u2013${r.test.high}`,
     r.status === "normal" ? "In range" : r.status === "low" ? "Below range" : "Above range",
   ]);
 
   (doc as any).autoTable({
     head: header,
     body: rows,
-    startY: 20,
+    startY,
     theme: "grid",
     headStyles: { fillColor: DEEP, textColor: "#ffffff", fontStyle: "bold", fontSize: 10 },
     bodyStyles: { fontSize: 9.5, textColor: INK },
@@ -144,6 +191,8 @@ function buildBiomarkersPage(doc: jsPDF, lab: LabResult): void {
       }
     },
   });
+  const finalY = (doc as any).lastAutoTable?.finalY ?? doc.internal.pageSize.getHeight();
+  return finalY + 14;
 }
 
 export function downloadPdfReport(lab: LabResult, ocrText?: string): void {
@@ -151,22 +200,26 @@ export function downloadPdfReport(lab: LabResult, ocrText?: string): void {
   const w = doc.internal.pageSize.getWidth();
 
   // ---------- Page 1 ----------
-  buildSystemsPage(doc, lab);
-  const y1 = 20 + Math.ceil(lab.systems.length / 3) * 56 + 30;
-  doc.setFontSize(13);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(DEEP);
-  doc.text("BIOMARKERS", 16, y1);
-  doc.setDrawColor(ACCENT);
-  doc.setLineWidth(0.7);
-  doc.line(16, y1 + 3, 68, y1 + 3);
-  buildBiomarkersPage(doc, lab);
+  const yAfterSystems = buildSystemsPage(doc, lab);
+  let y = yAfterSystems;
+  if (lab.rows.length) {
+    y = ensureSpace(doc, y, 40);
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(DEEP);
+    doc.text("BIOMARKERS", 16, y);
+    doc.setDrawColor(ACCENT);
+    doc.setLineWidth(0.7);
+    doc.line(16, y + 3, 68, y + 3);
+    y = buildBiomarkersPage(doc, lab, y + 12);
+  }
 
   // ---------- Page 2 ----------
   doc.addPage();
-  let y = headerPage(doc, "Diagnosis · Care Plan · Supplements", reportStamp()) + 10;
+  y = headerPage(doc, "Diagnosis · Care Plan · Supplements", reportStamp()) + 10;
 
   if (lab.primary) {
+    y = ensureSpace(doc, y, 80);
     y = sectionHeading(doc, y, "DEFINITIVE DIAGNOSIS");
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
@@ -178,12 +231,17 @@ export function downloadPdfReport(lab: LabResult, ocrText?: string): void {
     doc.text(`ICD-10: ${lab.primary.icd10}   ·   Confidence: ${lab.confidence}%`, 16, y + 12);
     y += 24;
     const explanation = doc.splitTextToSize(lab.primary.explanation, w - 32);
+    if (y + explanation.length * 6 > doc.internal.pageSize.getHeight() - 30) {
+      doc.addPage();
+      y = 20;
+    }
     doc.setFontSize(10);
     doc.setTextColor(INK);
     doc.text(explanation, 16, y);
     y += explanation.length * 6 + 14;
   }
 
+  y = ensureSpace(doc, y, 70);
   y = sectionHeading(doc, y, "PRESCRIPTION");
   if (lab.primary) {
     const p = lab.primary.prescription;
@@ -200,41 +258,49 @@ export function downloadPdfReport(lab: LabResult, ocrText?: string): void {
       doc.text(l, 16, y + i * 8);
     });
     if (p.notes) {
+      y += lines.length * 8 + 4;
+      const notes = doc.splitTextToSize(`Notes: ${p.notes}`, w - 32);
+      if (y + notes.length * 6 > doc.internal.pageSize.getHeight() - 20) {
+        doc.addPage();
+        y = 20;
+      }
       doc.setFontSize(9);
       doc.setTextColor(MUTED);
-      doc.text(`Notes: ${p.notes}`, 16, y + lines.length * 8 + 6);
-      y += lines.length * 8 + 16;
+      doc.text(notes, 16, y);
+      y += notes.length * 6 + 10;
     } else {
       y += lines.length * 8 + 12;
     }
   } else {
     doc.setFontSize(10);
     doc.setTextColor(MUTED);
-    doc.text("All values within reference range. No treatment indicated – recheck periodically.", 16, y);
+    doc.text("All values within reference range. No treatment indicated \u2013 recheck periodically.", 16, y);
     y += 16;
   }
 
+  y = ensureSpace(doc, y, 50);
   y = sectionHeading(doc, y, "CARE ACTIONS");
   if (lab.actions.length) {
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     lab.actions.forEach((a) => {
       const levelColor = { L1: ACCENT, L2: "#b7791f", L3: "#b3261e" }[a.level];
+      const detail = doc.splitTextToSize(a.detail, w - 32 - 16);
+      const needed = 8 + detail.length * 6 + 18;
+      if (y + needed > doc.internal.pageSize.getHeight() - 30) {
+        doc.addPage();
+        y = 20;
+      }
       doc.setTextColor(levelColor);
       doc.setFont("helvetica", "bold");
       doc.text(`[${a.level}] ${a.title}`, 16, y);
       doc.setTextColor(INK);
       doc.setFont("helvetica", "normal");
-      const detail = doc.splitTextToSize(a.detail, w - 32 - 16);
       doc.text(detail, 30, y + 8);
       doc.setTextColor(MUTED);
       doc.setFontSize(8.5);
       doc.text(a.timeframe, 30, y + 8 + detail.length * 6 + 2);
-      y += 8 + detail.length * 6 + 16;
-      if (y > doc.internal.pageSize.getHeight() - 60) {
-        doc.addPage();
-        y = 20;
-      }
+      y += needed;
     });
   } else {
     doc.setFontSize(10);
@@ -243,10 +309,15 @@ export function downloadPdfReport(lab: LabResult, ocrText?: string): void {
     y += 14;
   }
 
+  y = ensureSpace(doc, y, 50);
   y = sectionHeading(doc, y, "SUPPLEMENT PLAN");
   if (lab.supplements.length) {
     doc.setFontSize(9);
     lab.supplements.forEach((s) => {
+      if (y + 20 > doc.internal.pageSize.getHeight() - 20) {
+        doc.addPage();
+        y = 20;
+      }
       doc.setTextColor(INK);
       doc.setFont("helvetica", "bold");
       doc.text(s.name, 16, y);
@@ -254,10 +325,6 @@ export function downloadPdfReport(lab: LabResult, ocrText?: string): void {
       doc.setFont("helvetica", "normal");
       doc.text(`${s.dose}, ${s.timing} · supports ${s.improves}`, 16, y + 7);
       y += 15;
-      if (y > doc.internal.pageSize.getHeight() - 60) {
-        doc.addPage();
-        y = 20;
-      }
     });
   } else {
     doc.setFontSize(10);
@@ -267,16 +334,28 @@ export function downloadPdfReport(lab: LabResult, ocrText?: string): void {
   }
 
   if (ocrText && ocrText.trim()) {
-    y += 6;
-    if (y > doc.internal.pageSize.getHeight() - 120) {
+    const raw = doc.splitTextToSize(ocrText.trim(), w - 32);
+    const needed = 14 + raw.length * 6;
+    if (y + Math.min(needed, 100) > doc.internal.pageSize.getHeight() - 30) {
       doc.addPage();
       y = 20;
     }
+    y += 6;
     y = sectionHeading(doc, y, "RAW REPORT TEXT (AS CAPTURED BY OCR)");
-    const raw = doc.splitTextToSize(ocrText.trim(), w - 32);
     doc.setFontSize(8);
     doc.setTextColor(MUTED);
-    doc.text(raw, 16, y);
+    const pageH = doc.internal.pageSize.getHeight();
+    let offset = 0;
+    let cur = y;
+    while (offset < raw.length) {
+      const batch = Math.max(1, Math.floor((pageH - 30 - cur) / 6));
+      doc.text(raw.slice(offset, offset + batch), 16, cur);
+      offset += batch;
+      if (offset < raw.length) {
+        doc.addPage();
+        cur = 20;
+      }
+    }
   }
 
   doc.save(`bloodworks-analysis_${reportStamp()}.pdf`);

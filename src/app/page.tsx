@@ -3,7 +3,7 @@ import { LogoMark } from "@/components/site/logo";
 
 const STATS = [
   { value: "60+", label: "biomarkers decoded" },
-  { value: "9", label: "body systems scored" },
+  { value: "8", label: "body systems scored" },
   { value: "< 60s", label: "from photo to plan" },
   { value: "100%", label: "on your device" },
 ];
@@ -16,7 +16,7 @@ const SERVICES = [
   },
   {
     title: "System scores & care plan",
-    body: "Cardiovascular, endocrine, liver, kidney, immune and more – each scored, each backed by the numbers behind it, plus L1/L2/L3 care actions and a supplement plan.",
+    body: "Heart, Inflammation, Metabolic, Thyroid, Hormonal, Nutritional, Liver and Kidney – each scored, each backed by the numbers behind it, plus L1/L2/L3 care actions and a supplement plan.",
     points: ["Per-system percentage scores", "Definitive readouts, no hedging", "Download or share the full report"],
   },
   {
@@ -46,7 +46,7 @@ const STEPS = [
 
 const CAPABILITIES = [
   ["Reference-range grading", "High, low and in-range flags with lab-supplied ranges respected"],
-  ["Per-system % scores", "Nine body systems, each scored from the biomarkers it covers"],
+  ["Per-system % scores", "Eight body systems, each scored from the biomarkers it covers"],
   ["Care actions L1 / L2 / L3", "Now, this week, and to discuss – tiered and concrete"],
   ["Supplement plan", "What, dose and timing, mapped to the gaps your panel shows"],
   ["Symptom checker", "Describe how you feel and get a clear, evidence-ordered read"],
@@ -80,10 +80,10 @@ const FAQS = [
 
 function HeroMock() {
   const bars = [
-    { name: "Cardiovascular", v: 82 },
-    { name: "Endocrine", v: 64 },
-    { name: "Liver function", v: 91 },
-    { name: "Kidney", v: 77 },
+    { name: "Heart Health", v: 82 },
+    { name: "Metabolic Health", v: 64 },
+    { name: "Liver Health", v: 91 },
+    { name: "Kidney Health", v: 77 },
   ];
   const rows = [
     { t: "Neutrophils", v: "65.3", s: "Normal" },

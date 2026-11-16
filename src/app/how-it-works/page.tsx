@@ -36,7 +36,7 @@ export default function HowItWorks() {
           },
           { h: "4. Scoring the systems" },
           {
-            p: "Biomarkers are grouped into body systems – cardiovascular, endocrine, hepatic, renal, immune, hematologic, metabolic, inflammatory and nutritional. Each system gets a percentage score derived from the values it covers. A system with no data on your report is marked as not evaluated rather than guessed.",
+            p: "Biomarkers are grouped into eight body systems – Heart Health, Inflammation, Metabolic, Thyroid, Hormonal, Nutritional, Liver Health and Kidney Health. Each system gets a percentage score derived from the values it covers. A system with no data on your report is marked as not evaluated rather than guessed.",
           },
           { h: "5. Care plan and Sai" },
           {
