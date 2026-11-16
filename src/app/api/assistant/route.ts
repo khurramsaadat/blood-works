@@ -1,6 +1,6 @@
 import { parseLabReport } from "@/lib/lab";
 
-type Msg = { role: "system" | "user" | "assistant"; content: string };
+type Msg = { role: "system" | "user" | "assistant"; content: string; reasoning_content?: string };
 
 function buildContext(text: string): string {
   const lab = parseLabReport(text);
@@ -68,7 +68,17 @@ export async function POST(request: Request) {
     "If a specific lab value or diagnosis is referenced, anchor your answer to it. " +
     (ctx ? "\n\nCurrent report analysis (ground truth for this user):\n" + ctx : "");
 
-  const messages: Msg[] = [{ role: "system", content: system }, ...incoming];
+  const messages: Msg[] = [
+    { role: "system", content: system },
+    ...incoming.map((m): Msg => {
+      // IFM reasoning models require assistant turns to be replayed with
+      // reasoning_content verbatim ("" is a valid value). See docs.ifm.ai multi-turn.
+      if (m.role === "assistant" && typeof m.reasoning_content === "string") {
+        return { role: "assistant", content: m.content, reasoning_content: m.reasoning_content };
+      }
+      return { role: m.role, content: m.content };
+    }),
+  ];
 
   try {
     const res = await fetch(`${base}/chat/completions`, {
@@ -83,10 +93,16 @@ export async function POST(request: Request) {
         { status: 502 }
       );
     }
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string; reasoning_content?: string | null } }[];
+    };
     const content = data.choices?.[0]?.message?.content?.trim();
     if (!content) return Response.json({ error: "Assistant returned an empty response." }, { status: 502 });
-    return Response.json({ reply: content });
+    const reasoning =
+      typeof data.choices?.[0]?.message?.reasoning_content === "string"
+        ? data.choices[0].message.reasoning_content
+        : "";
+    return Response.json({ reply: content, reasoning_content: reasoning });
   } catch (e) {
     return Response.json(
       { error: `Could not reach the assistant: ${e instanceof Error ? e.message : "network error"}` },
