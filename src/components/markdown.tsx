@@ -14,7 +14,7 @@ export default function Markdown({ text }: { text: string }) {
           <p className="my-1.5 leading-relaxed first:mt-0 last:mb-0">{props.children}</p>
         ),
         strong: (props) => (
-          <strong className="font-semibold text-gray-900">{props.children}</strong>
+          <strong className="font-semibold text-foreground">{props.children}</strong>
         ),
         em: (props) => <em className="italic">{props.children}</em>,
         ul: (props) => <ul className="my-1.5 list-disc space-y-1 pl-5">{props.children}</ul>,
@@ -23,43 +23,43 @@ export default function Markdown({ text }: { text: string }) {
         ),
         li: (props) => <li className="leading-relaxed">{props.children}</li>,
         h1: (props) => (
-          <h3 className="mt-2.5 mb-1 text-sm font-semibold text-gray-900">{props.children}</h3>
+          <h3 className="mt-2.5 mb-1 text-sm font-semibold text-foreground">{props.children}</h3>
         ),
         h2: (props) => (
-          <h3 className="mt-2.5 mb-1 text-sm font-semibold text-gray-900">{props.children}</h3>
+          <h3 className="mt-2.5 mb-1 text-sm font-semibold text-foreground">{props.children}</h3>
         ),
         h3: (props) => (
-          <h4 className="mt-2 mb-0.5 text-[13px] font-semibold text-gray-900">{props.children}</h4>
+          <h4 className="mt-2 mb-0.5 text-[13px] font-semibold text-foreground">{props.children}</h4>
         ),
         a: (props) => (
-          <a className="text-[#1677ff] underline" href={props.href} target="_blank" rel="noreferrer">
+          <a className="text-accent-deep underline" href={props.href} target="_blank" rel="noreferrer">
             {props.children}
           </a>
         ),
         blockquote: (props) => (
-          <blockquote className="my-1.5 border-l-2 border-gray-300 pl-3 text-gray-500">
+          <blockquote className="my-1.5 border-l-2 border-border-c pl-3 text-muted">
             {props.children}
           </blockquote>
         ),
         pre: (props) => (
-          <pre className="my-1.5 overflow-x-auto rounded-lg bg-gray-100 p-3 text-xs">
+          <pre className="my-1.5 overflow-x-auto rounded-lg bg-soft p-3 text-xs">
             {props.children}
           </pre>
         ),
         code: (props) => (
-          <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[12px]">
+          <code className="rounded bg-soft px-1 py-0.5 font-mono text-[12px]">
             {props.children}
           </code>
         ),
-        hr: () => <hr className="my-3 border-gray-200" />,
+        hr: () => <hr className="my-3 border-border-c" />,
         table: (props) => <table className="my-2 w-full border-collapse text-xs">{props.children}</table>,
         thead: (props) => <thead>{props.children}</thead>,
         tbody: (props) => <tbody>{props.children}</tbody>,
-        tr: (props) => <tr className="border-b border-gray-100 last:border-0">{props.children}</tr>,
+        tr: (props) => <tr className="border-b border-border-c last:border-0">{props.children}</tr>,
         th: (props) => (
-          <th className="py-1 pr-3 text-left font-semibold text-gray-700">{props.children}</th>
+          <th className="py-1 pr-3 text-left font-semibold text-foreground">{props.children}</th>
         ),
-        td: (props) => <td className="py-1 pr-3 align-top text-gray-600">{props.children}</td>,
+        td: (props) => <td className="py-1 pr-3 align-top text-muted">{props.children}</td>,
       }}
     >
       {text}

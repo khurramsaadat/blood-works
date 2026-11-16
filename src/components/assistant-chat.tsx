@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Markdown from "@/components/markdown";
 import { buildSaiTranscript, copyText, downloadText, reportStamp, shareText } from "@/lib/report-export";
-
-type ChatMsg = { role: "user" | "assistant"; content: string; reasoning?: string };
+import type { ChatMsg } from "@/lib/sessions";
 
 const SUGGESTIONS = [
   "What do these results mean overall?",
@@ -27,7 +26,7 @@ function ActionIcon({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="h-6 w-6 rounded-md text-gray-400 hover:text-[#1677ff] hover:bg-blue-50 flex items-center justify-center"
+      className="h-6 w-6 rounded-md text-muted hover:text-accent-deep hover:bg-soft flex items-center justify-center"
     >
       {children}
     </button>
@@ -56,25 +55,80 @@ const ICON = {
       <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
     </svg>
   ),
+  mic: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+      <path d="M19 11a7 7 0 0 1-14 0 M12 18v4" />
+    </svg>
+  ),
+  micOff: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="2" y1="2" x2="22" y2="22" />
+      <path d="M9 9v2a3 3 0 0 0 5.1 2.1 M15 11V5a3 3 0 0 0-5.9-.8" />
+      <path d="M19 11a7 7 0 0 1-14 0 M12 18v4" />
+    </svg>
+  ),
 };
+
+/* ---------------- Speech recognition (optional, feature-detected) ---------------- */
+
+type Rec = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: (e: { resultIndex: number; results: ArrayLike<{ transcript: string }> }) => void;
+  onend: () => void;
+  onerror: (e: { error?: string }) => void;
+  start: () => void;
+  stop: () => void;
+};
+
+function getRecognition(): Rec | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as {
+    SpeechRecognition?: new () => Rec;
+    webkitSpeechRecognition?: new () => Rec;
+  };
+  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+  if (!Ctor) return null;
+  const rec = new Ctor();
+  rec.lang = "en";
+  rec.interimResults = false;
+  rec.continuous = false;
+  return rec;
+}
 
 export default function AssistantChat({
   context,
   labSummary,
-  onCollapse,
+  messages,
+  onMessagesChange,
+  onClearChat,
 }: {
   context: string;
   labSummary?: { primary: string; date: string } | null;
-  onCollapse?: () => void;
+  messages: ChatMsg[];
+  onMessagesChange: (updater: (prev: ChatMsg[]) => ChatMsg[]) => void;
+  onClearChat: () => void;
 }) {
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
+  const [micSupported, setMicSupported] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const recRef = useRef<Rec | null>(null);
   const ctxRef = useRef(context);
   ctxRef.current = context;
+
+  // Feature-detect on mount only, so the server and first client render match
+  // (avoids a hydration mismatch for the mic button).
+  useEffect(() => {
+    setMicSupported(!!getRecognition());
+  }, []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -87,43 +141,74 @@ export default function AssistantChat({
     return () => clearTimeout(t);
   }, [toast]);
 
-  const send = async (text: string) => {
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
+
+  const send = (text: string) => {
     const t = text.trim();
     if (!t || busy) return;
     setInput("");
     setError(null);
     setBusy(true);
-    setMessages((m) => [...m, { role: "user", content: t }]);
-    try {
-      const res = await fetch("/api/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          // Assistant turns carry reasoning_content verbatim — required by IFM
-          // reasoning models on every multi-turn request.
-          messages: [
-            ...messages.map((m) =>
-              m.role === "assistant"
-                ? { role: "assistant", content: m.content, reasoning_content: m.reasoning ?? "" }
-                : { role: "user", content: m.content }
-            ),
-            { role: "user", content: t },
-          ],
-          context: ctxRef.current,
-        }),
-      });
-      const data = (await res.json()) as { reply?: string; reasoning_content?: string; error?: string };
-      if (!res.ok || data.error) throw new Error(data.error ?? "Assistant request failed.");
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: data.reply ?? "", reasoning: data.reasoning_content ?? "" },
-      ]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
-      setMessages((m) => m.filter((x, i) => !(i === m.length - 1 && x.role === "user" && x.content === t)));
-    } finally {
-      setBusy(false);
+    onMessagesChange((m) => [...m, { role: "user", content: t }]);
+    const history = [
+      ...messages.map((m) =>
+        m.role === "assistant"
+          ? { role: "assistant", content: m.content, reasoning_content: m.reasoning ?? "" }
+          : { role: "user", content: m.content }
+      ),
+      { role: "user", content: t },
+    ];
+    fetch("/api/assistant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        // Assistant turns carry reasoning_content verbatim – required by IFM
+        // reasoning models on every multi-turn request.
+        messages: history,
+        context: ctxRef.current,
+      }),
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as { reply?: string; reasoning_content?: string; error?: string };
+        if (!res.ok || data.error) throw new Error(data.error ?? "Assistant request failed.");
+        onMessagesChange((m) => [
+          ...m,
+          { role: "assistant", content: data.reply ?? "", reasoning: data.reasoning_content ?? "" },
+        ]);
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+        onMessagesChange((m) => m.filter((x) => x.role !== "user" || x.content !== t));
+      })
+      .finally(() => setBusy(false));
+  };
+
+  const toggleMic = () => {
+    if (listening) {
+      recRef.current?.stop();
+      setListening(false);
+      return;
     }
+    const rec = getRecognition();
+    if (!rec) return;
+    rec.onresult = (e) => {
+      let transcript = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        transcript += e.results[i].transcript;
+      }
+      if (transcript.trim()) {
+        setInput((prev) => (prev ? prev + " " : "") + transcript.replace(/\s+/g, " ").trim());
+      }
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recRef.current = rec;
+    rec.start();
+    setListening(true);
   };
 
   const transcript = () => buildSaiTranscript(messages, labSummary);
@@ -134,7 +219,7 @@ export default function AssistantChat({
       downloadText(`sai-conversation_${reportStamp()}.txt`, transcript());
       setToast("Conversation downloaded");
     } else {
-      const r = await shareText(transcript(), "Sai conversation — BloodWorks Health");
+      const r = await shareText(transcript(), "Sai conversation – BloodWorks Health");
       setToast(r === "shared" ? "Conversation shared" : "Conversation copied to clipboard");
     }
   };
@@ -148,25 +233,25 @@ export default function AssistantChat({
       downloadText(`sai-reply_${reportStamp()}.txt`, label);
       setToast("Reply downloaded");
     } else {
-      const r = await shareText(label, "Sai reply — BloodWorks Health");
+      const r = await shareText(label, "Sai reply – BloodWorks Health");
       setToast(r === "shared" ? "Reply shared" : "Reply copied to clipboard");
     }
   };
 
   return (
-    <section className="relative flex h-full w-full flex-col bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden">
-      <div className="shrink-0 px-5 py-3.5 border-b border-gray-100 flex items-center gap-2.5 bg-gradient-to-r from-teal-50 to-white">
-        <span className="h-8 w-8 rounded-full bg-[#3cbab4] flex items-center justify-center text-white text-sm font-bold shadow-sm">
+    <section className="relative flex h-full w-full flex-col bg-card border border-border-c rounded-2xl shadow-xl overflow-hidden">
+      <div className="shrink-0 px-5 py-3.5 border-b border-border-c flex items-center gap-2.5 bg-gradient-to-r from-soft to-card">
+        <span className="h-8 w-8 rounded-full bg-brand-deep flex items-center justify-center text-white text-sm font-bold shadow-sm">
           S
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 leading-tight">Sai</p>
-          <p className="text-[11px] text-gray-400 leading-tight">
+          <p className="text-sm font-semibold text-foreground leading-tight">Sai</p>
+          <p className="text-[11px] text-muted leading-tight">
             {context ? "AI assistant · aware of your report" : "Your AI health assistant"}
           </p>
         </div>
         {context && (
-          <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+          <span className="text-[10px] font-medium text-accent-deep bg-soft border border-accent/30 rounded-full px-2 py-0.5">
             ✓ report loaded
           </span>
         )}
@@ -178,34 +263,48 @@ export default function AssistantChat({
             <ActionIcon label="Share conversation" onClick={() => exportConversation("share")}>
               {ICON.share}
             </ActionIcon>
+            <ActionIcon
+              label="Clear conversation"
+              onClick={() => {
+                if (!confirmClear) {
+                  setConfirmClear(true);
+                  return;
+                }
+                onClearChat();
+                setConfirmClear(false);
+                setToast("Conversation cleared");
+              }}
+            >
+              {confirmClear ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500">
+                  <path d="M3 6h18 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                </svg>
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                </svg>
+              )}
+            </ActionIcon>
           </div>
         )}
-        {onCollapse && (
-          <button
-            onClick={onCollapse}
-            className="h-7 w-7 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center justify-center"
-            aria-label="Hide assistant panel"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M9 6l6 6-6 6" />
-            </svg>
-          </button>
+        {confirmClear && (
+          <span className="text-[10px] font-medium text-red-500">Tap again to confirm</span>
         )}
       </div>
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && !busy && (
           <div className="space-y-4">
-            <div className="rounded-xl bg-[#f4fbfa] border border-teal-100 p-4">
-              <p className="text-sm font-medium text-gray-800">Your results, explained.</p>
-              <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                Ask anything about your report — diagnosis, prescription, system scores, care
+            <div className="rounded-xl bg-soft/60 border border-border-c p-4">
+              <p className="text-sm font-medium text-foreground">Your results, explained.</p>
+              <p className="text-xs text-muted mt-1.5 leading-relaxed">
+                Ask anything about your report – diagnosis, prescription, system scores, care
                 actions or supplements. Sai answers in plain English, no hedging. You can
-                download or share any reply.
+                download or share any reply. Your conversation is saved on this device.
               </p>
             </div>
             <div>
-              <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mb-2">
+              <p className="text-[11px] font-semibold tracking-widest uppercase text-muted mb-2">
                 Quick questions
               </p>
               <div className="flex flex-col gap-2">
@@ -213,7 +312,7 @@ export default function AssistantChat({
                   <button
                     key={s}
                     onClick={() => send(s)}
-                    className="text-left text-xs border border-gray-200 hover:border-[#1677ff] hover:text-[#1677ff] rounded-xl px-3.5 py-2.5 text-gray-600 transition-colors"
+                    className="text-left text-xs border border-border-c hover:border-accent hover:text-accent-deep rounded-xl px-3.5 py-2.5 text-muted transition-colors"
                   >
                     {s}
                   </button>
@@ -228,8 +327,8 @@ export default function AssistantChat({
             <div
               className={`max-w-[92%] rounded-xl px-4 py-2.5 text-sm ${
                 m.role === "user"
-                  ? "ml-auto bg-[#1677ff] text-white rounded-br-sm"
-                  : "bg-gray-50 border border-gray-200 text-gray-700 rounded-tl-sm"
+                  ? "ml-auto bg-accent text-white rounded-br-sm"
+                  : "bg-soft border border-border-c text-foreground rounded-tl-sm"
               }`}
             >
               {m.role === "assistant" ? (
@@ -240,7 +339,7 @@ export default function AssistantChat({
             </div>
             {m.role === "assistant" && (
               <div className="mt-1 flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                <span className="text-[10px] text-gray-400 mr-1">Reply:</span>
+                <span className="text-[10px] text-muted mr-1">Reply:</span>
                 <ActionIcon label="Copy reply" onClick={() => exportReply(m, "copy")}>{ICON.copy}</ActionIcon>
                 <ActionIcon label="Download reply" onClick={() => exportReply(m, "download")}>{ICON.download}</ActionIcon>
                 <ActionIcon label="Share reply" onClick={() => exportReply(m, "share")}>{ICON.share}</ActionIcon>
@@ -250,11 +349,11 @@ export default function AssistantChat({
         ))}
 
         {busy && (
-          <div className="inline-flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-400">
+          <div className="inline-flex items-center gap-2 bg-soft border border-border-c rounded-xl px-4 py-2.5 text-sm text-muted">
             <span className="flex gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-gray-300 animate-pulse" />
-              <span className="h-1.5 w-1.5 rounded-full bg-gray-300 animate-pulse [animation-delay:150ms]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-gray-300 animate-pulse [animation-delay:300ms]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-muted/40 animate-pulse" />
+              <span className="h-1.5 w-1.5 rounded-full bg-muted/40 animate-pulse [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-muted/40 animate-pulse [animation-delay:300ms]" />
             </span>
             Thinking…
           </div>
@@ -264,31 +363,53 @@ export default function AssistantChat({
       {error && <p className="shrink-0 px-4 pb-2 text-xs text-red-600">{error}</p>}
 
       {toast && (
-        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs rounded-full px-3.5 py-1.5 shadow-lg">
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-foreground text-background text-xs rounded-full px-3.5 py-1.5 shadow-lg">
           {toast}
         </div>
       )}
 
-      <div className="shrink-0 border-t border-gray-100 p-3.5 flex gap-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send(input);
-            }
-          }}
-          placeholder="Ask Sai about your results…"
-          className="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#1677ff]"
-        />
-        <button
-          onClick={() => send(input)}
-          disabled={busy || !input.trim()}
-          className="shrink-0 bg-[#1677ff] hover:bg-[#1677ff]/90 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 text-sm"
-        >
-          Send
-        </button>
+      {/* Input: multiline + mic */}
+      <div className="shrink-0 border-t border-border-c p-3.5">
+        <div className="flex items-end gap-2 bg-soft border border-border-c rounded-xl px-2.5 py-2 focus-within:border-accent transition-colors">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send(input);
+              }
+            }}
+            placeholder="Ask Sai about your results…"
+            rows={Math.min(4, Math.max(1, input.split("\n").length))}
+            className="flex-1 min-w-0 bg-transparent text-sm placeholder:text-muted/70 focus:outline-none resize-none leading-snug max-h-24"
+          />
+          {micSupported && (
+            <button
+              onClick={toggleMic}
+              title={listening ? "Stop listening" : "Dictate"}
+              aria-label={listening ? "Stop listening" : "Dictate"}
+              className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                listening
+                  ? "bg-red-500 text-white animate-pulse"
+                  : "text-muted hover:text-accent-deep hover:bg-soft"
+              }`}
+            >
+              {listening ? ICON.mic : ICON.micOff}
+            </button>
+          )}
+          <button
+            onClick={() => send(input)}
+            disabled={busy || !input.trim()}
+            className="shrink-0 bg-accent hover:bg-brand-deep disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-lg px-3.5 py-2 text-sm transition-colors"
+          >
+            Send
+          </button>
+        </div>
+        <p className="text-[10px] text-muted mt-1.5 px-1">
+          Enter to send · Shift + Enter for a new line
+        </p>
       </div>
     </section>
   );

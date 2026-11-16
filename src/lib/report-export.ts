@@ -9,7 +9,7 @@ function statusWord(status: string): string {
 export function buildReportText(lab: LabResult, sourceText?: string): string {
   const lines: string[] = [];
   const now = new Date();
-  lines.push("BLOODWORKS HEALTH — LAB REPORT ANALYSIS");
+  lines.push("BLOODWORKS HEALTH – LAB REPORT ANALYSIS");
   lines.push(`Generated: ${now.toDateString()}`);
   lines.push("=".repeat(52));
 
@@ -40,7 +40,7 @@ export function buildReportText(lab: LabResult, sourceText?: string): string {
     lines.push("FINDINGS");
     lines.push("-".repeat(52));
     for (const f of lab.findings) {
-      lines.push(`${f.name} [ICD-10 ${f.icd10}] — ${f.explanation}`);
+      lines.push(`${f.name} [ICD-10 ${f.icd10}] – ${f.explanation}`);
     }
   }
 
@@ -62,7 +62,7 @@ export function buildReportText(lab: LabResult, sourceText?: string): string {
     lines.push("");
     lines.push("DEFINITIVE DIAGNOSIS");
     lines.push("-".repeat(52));
-    lines.push("All values within reference range. No treatment indicated — recheck periodically.");
+    lines.push("All values within reference range. No treatment indicated – recheck periodically.");
   }
 
   // Care actions
@@ -82,7 +82,7 @@ export function buildReportText(lab: LabResult, sourceText?: string): string {
     lines.push("SUPPLEMENT PLAN");
     lines.push("-".repeat(52));
     for (const s of lab.supplements) {
-      lines.push(`${s.name} — ${s.dose}, ${s.timing} (supports ${s.improves})`);
+      lines.push(`${s.name} – ${s.dose}, ${s.timing} (supports ${s.improves})`);
     }
   }
 
@@ -108,7 +108,7 @@ export function buildSaiTranscript(
 ): string {
   const lines: string[] = [];
   const now = new Date();
-  lines.push("Sai — AI Health Assistant · Conversation");
+  lines.push("Sai – AI Health Assistant · Conversation");
   lines.push(`BloodWorks Health · ${now.toDateString()}`);
   lines.push("=".repeat(52));
   if (lab) {
@@ -143,7 +143,7 @@ export async function shareText(text: string, title: string): Promise<"shared" |
       await navigator.share({ title, text });
       return "shared";
     } catch {
-      // user dismissed the share sheet — fall through to copy
+      // user dismissed the share sheet – fall through to copy
     }
   }
   return copyText(text);

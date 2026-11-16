@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "No messages provided." }, { status: 400 });
   }
 
-  // `context` is the raw report/symptom text — re-parsed here so the lab
+  // `context` is the raw report/symptom text – re-parsed here so the lab
   // engine (single source of truth) builds the assistant's grounding.
   const ctx = buildContext(typeof body.context === "string" ? body.context : "");
 
@@ -65,6 +65,7 @@ export async function POST(request: Request) {
     "You interpret lab reports, diagnoses, prescriptions, system health scores, care actions and supplement plans. " +
     "Give direct, decisive, plain-English answers. Be concise (under ~200 words) unless the user asks for detail. " +
     "Use short paragraphs or a tight bullet list. Do NOT hedge with 'consult your doctor' or 'seek professional medical advice'. " +
+    "Use a spaced en dash ( – ) for pauses; never use an em dash or a bare hyphen as a pause. Never use emojis. " +
     "If a specific lab value or diagnosis is referenced, anchor your answer to it. " +
     (ctx ? "\n\nCurrent report analysis (ground truth for this user):\n" + ctx : "");
 

@@ -1,23 +1,107 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #f6f7f9;
-  --foreground: #111827;
-  --accent: #3cbab4;
-  --accent-blue: #1677ff;
+  --background: #f0f8f4;
+  --background-card: #ffffff;
+  --background-soft: #e6f2ec;
+  --foreground: #0e1612;
+  --muted: #5b6b64;
+  --border: #dce8e2;
+  --accent: #3c8a68;
+  --accent-deep: #0f6e60;
+  --accent-bright: #3cbab4;
+  --brand-deep: #0f6e60;
+  --ring: rgba(60, 138, 104, 0.35);
+}
+
+.dark {
+  --background: #0c1512;
+  --background-card: #101c18;
+  --background-soft: #15241f;
+  --foreground: #eaf3ef;
+  --muted: #8fa39b;
+  --border: #1f332c;
+  --accent: #3c8a68;
+  --accent-deep: #3cbab4;
+  --accent-bright: #4cc9c2;
+  --brand-deep: #0f6e60;
+  --ring: rgba(60, 186, 180, 0.4);
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-card: var(--background-card);
+  --color-soft: var(--background-soft);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border-c: var(--border);
   --color-accent: var(--accent);
-  --color-accent-blue: var(--accent-blue);
-  --font-sans: var(--font-inter), var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-bright: var(--accent-bright);
+  --color-brand-deep: var(--brand-deep);
+  --font-sans: var(--font-urbanist), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-figtree), var(--font-urbanist), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-figtree), var(--font-urbanist), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-urbanist), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--accent-bright);
+  color: #ffffff;
+}
+
+/* Muted architectural taupe scrollbar, 4px, transparent track */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #b3a99a transparent;
+}
+*::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #b3a99a;
+  border-radius: 999px;
+}
+
+/* Staggered fade-in-up used by the mobile menu */
+@keyframes bw-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.bw-fade-up {
+  animation: bw-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bw-fade-up {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
 }

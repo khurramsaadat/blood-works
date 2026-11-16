@@ -1,6 +1,6 @@
 /* =====================================================================
    Lab knowledge: tests, reference ranges, findings, system scores,
-   actions and supplement plan. Pure logic — no React.
+   actions and supplement plan. Pure logic – no React.
    ===================================================================== */
 
 export type Prescription = {
@@ -196,40 +196,68 @@ function aliasWordIndex(words: WordHit[], alias: string): WordHit | null {
  * Extract the numeric value for a test from OCR text.
  * Pass 1: alias (+ optional trailing words) followed by a number.
  * Pass 2: fuzzy alias match (tolerates OCR misspells), then a number in a
- * nearby window — handles column-jumbled table text.
+ * nearby window – handles column-jumbled table text.
  */
+/*
+ * Range detector: true if the number at [numStart, numEnd) is part of a
+ * "low - high" reference range (a dash / en-dash / em-dash and another number
+ * within a few characters on either side). Such numbers are reference bounds,
+ * not the patient's result, and must never be attributed to a test.
+ */
+function inRangeContext(lower: string, numStart: number, numEnd: number): boolean {
+  const before = lower.slice(Math.max(0, numStart - 12), numStart);
+  const after = lower.slice(numEnd, Math.min(lower.length, numEnd + 12));
+  if (/[0-9]\s*[-–—]\s*$/.test(before)) return true;
+  if (/^\s*[-–—]\s*[0-9]/.test(after)) return true;
+  return false;
+}
+
 function extractValueForTest(
   lower: string,
   words: WordHit[],
   test: LabTest,
   consumed: { from: number; to: number }[]
 ): number | null {
+  // Pass 1: alias (+ up to two trailing label words) immediately followed by a
+  // number. The number must sit close to the alias and must not be a range bound.
   for (const alias of test.aliases) {
     const re = new RegExp(
-      `\\b${esc(alias)}[\\s:#\\-.]*(?:[a-z]{2,12}[\\s:#\\-.]+){0,2}([0-9]+(?:\\.[0-9]+)?)`
+      `\\b${esc(alias)}[\\s:#\\-.]*(?:[a-z]{2,12}[\\s:#\\-.]+){0,2}([0-9]+(?:\\.[0-9]+)?)(?![0-9.])`
     );
     const m = lower.match(re);
     if (m) {
+      const aliasEnd = m.index! + alias.length;
       const numStart = m.index! + m[0].length - m[1].length;
-      const v = plausibleValue(m[1], test);
-      if (v !== null) {
-        consumed.push({ from: numStart, to: numStart + m[1].length });
-        return v;
+      const numEnd = numStart + m[1].length;
+      // A number 30+ chars past the alias is a reference value from another
+      // column (e.g. "t3" landing inside "0.27 - 4.20"). A number that is part
+      // of a "low - high" range is a bound, not a result. Reject both.
+      if (numStart - aliasEnd <= 30 && !inRangeContext(lower, numStart, numEnd)) {
+        const v = plausibleValue(m[1], test);
+        if (v !== null) {
+          consumed.push({ from: numStart, to: numEnd });
+          return v;
+        }
       }
     }
   }
+  // Pass 2: fuzzy alias token (tolerates OCR misspells) then the first number in
+  // a tight window that is not already consumed and not a range bound.
   for (const alias of test.aliases) {
     const hit = aliasWordIndex(words, alias);
     if (!hit) continue;
-    const end = Math.min(lower.length, hit.i + hit.w.length + 60);
+    const end = Math.min(lower.length, hit.i + hit.w.length + 40);
     const tail = lower.slice(hit.i + hit.w.length, end);
-    const num = tail.match(/([0-9]+(?:\.[0-9]+)?)/);
+    const num = tail.match(/([0-9]+(?:\.[0-9]+)?)(?![0-9.])/);
     if (num) {
       const numStart = hit.i + hit.w.length + num.index!;
+      const numEnd = numStart + num[1].length;
+      if (numStart - (hit.i + hit.w.length) > 24) continue;
       if (consumed.some((c) => numStart >= c.from && numStart < c.to)) continue;
+      if (inRangeContext(lower, numStart, numEnd)) continue;
       const v = plausibleValue(num[1], test);
       if (v !== null) {
-        consumed.push({ from: numStart, to: numStart + num[0].length });
+        consumed.push({ from: numStart, to: numEnd });
         return v;
       }
     }
@@ -1010,7 +1038,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     icd10: "E78.8",
     severity: severityOf(r),
     system: "cardiovascular",
-    explanation: `Apolipoprotein B ${r.value} mg/dL is above the 60–125 reference range — elevated atherogenic particle count and cardiovascular risk.`,
+    explanation: `Apolipoprotein B ${r.value} mg/dL is above the 60–125 reference range – elevated atherogenic particle count and cardiovascular risk.`,
     prescription: {
       medication: "Atorvastatin + Berberine",
       dosage: "10mg + 500mg",
@@ -1038,7 +1066,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     icd10: "E78.8",
     severity: severityOf(r),
     system: "cardiovascular",
-    explanation: `Lipoprotein(a) ${r.value} mg/dL is above the <30 optimal range — a genetic, independent cardiovascular risk factor.`,
+    explanation: `Lipoprotein(a) ${r.value} mg/dL is above the <30 optimal range – a genetic, independent cardiovascular risk factor.`,
     prescription: {
       medication: "Pelacarsen (if ≥50) / Omega-3 + PCSK9 inhibitor review",
       dosage: "1000mg Omega-3 daily",
@@ -1072,7 +1100,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
           prescription: {
             medication: "Stop D3 supplementation",
             dosage: "0 IU",
-            frequency: "—",
+            frequency: "–",
             duration: "Recheck 25-OH D in 6 weeks",
             notes: "Maintain normal diet; calcium check recommended.",
           },
@@ -1101,8 +1129,8 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
           explanation: `Vitamin B12 ${r.value} pg/mL is above the 180–900 reference range.`,
           prescription: {
             medication: "Discontinue B12 supplements",
-            dosage: "—",
-            frequency: "—",
+            dosage: "–",
+            frequency: "–",
             duration: "Recheck in 8 weeks",
             notes: "Check liver and hematologic status if persistently high.",
           },
@@ -1131,8 +1159,8 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
           explanation: `Folate ${r.value} ng/mL is above the 3–17 reference range.`,
           prescription: {
             medication: "Discontinue folate supplementation",
-            dosage: "—",
-            frequency: "—",
+            dosage: "–",
+            frequency: "–",
             duration: "Recheck in 8 weeks",
             notes: "Dietary folate is sufficient for most people.",
           },
@@ -1161,8 +1189,8 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
           explanation: `Serum iron ${r.value} µg/dL is above the 60–170 reference range.`,
           prescription: {
             medication: "Discontinue iron supplements",
-            dosage: "—",
-            frequency: "—",
+            dosage: "–",
+            frequency: "–",
             duration: "Recheck iron + ferritin in 8 weeks",
             notes: "Check ferritin to rule out hemochromatosis if persistently high.",
           },
@@ -1181,8 +1209,8 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
         r.status === "low"
           ? "Discontinue iron supplements"
           : "Ferrous Ascorbylate 200mg",
-      dosage: r.status === "low" ? "—" : "200mg once daily",
-      frequency: r.status === "low" ? "—" : "Once daily before breakfast",
+      dosage: r.status === "low" ? "–" : "200mg once daily",
+      frequency: r.status === "low" ? "–" : "Once daily before breakfast",
       duration: r.status === "low" ? "Recheck in 8 weeks" : "90 days, then recheck",
       notes: "Pair with ferritin for full picture.",
     },
@@ -1211,8 +1239,8 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
           explanation: `Iron saturation ${r.value}% is above the 20–50 reference range.`,
           prescription: {
             medication: "Discontinue iron supplements",
-            dosage: "—",
-            frequency: "—",
+            dosage: "–",
+            frequency: "–",
             duration: "Recheck ferritin + saturation in 8 weeks",
             notes: "Rule out hemochromatosis if persistently elevated.",
           },
@@ -1224,7 +1252,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
           icd10: "D50.9",
           severity: severityOf(r),
           system: "nutritional",
-          explanation: `Ferritin ${r.value} ng/mL is below the 30–300 reference range — iron stores are depleted.`,
+          explanation: `Ferritin ${r.value} ng/mL is below the 30–300 reference range – iron stores are depleted.`,
           prescription: {
             medication: "Ferrous Ascorbylate",
             dosage: "200mg",
@@ -1238,7 +1266,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
           icd10: "E88.1",
           severity: severityOf(r),
           system: "nutritional",
-          explanation: `Ferritin ${r.value} ng/mL is above the 30–300 reference range — can indicate iron overload or inflammation.`,
+          explanation: `Ferritin ${r.value} ng/mL is above the 30–300 reference range – can indicate iron overload or inflammation.`,
           prescription: {
             medication: "Discontinue iron + Omega-3 (anti-inflammatory)",
             dosage: "1000mg Omega-3",
@@ -1271,8 +1299,8 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
           explanation: `Testosterone ${r.value} ng/dL is above the 300–1000 reference range.`,
           prescription: {
             medication: "Review exogenous androgens / anabolic supplements",
-            dosage: "—",
-            frequency: "—",
+            dosage: "–",
+            frequency: "–",
             duration: "Recheck in 4 weeks",
             notes: "If supplements: stop and recheck. If none: endocrinology review.",
           },
@@ -1286,8 +1314,8 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     explanation: `Estradiol ${r.value} pg/mL is outside the reference range.`,
     prescription: {
       medication: "Review exogenous estrogen / endocrinology consult",
-      dosage: "—",
-      frequency: "—",
+      dosage: "–",
+      frequency: "–",
       duration: "Recheck in 6 weeks",
       notes: "Interpret with FSH/LH context.",
     },
@@ -1333,7 +1361,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     prescription: {
       medication: "Review PCOS / adrenal workup",
       dosage: "Per findings",
-      frequency: "—",
+      frequency: "–",
       duration: "8-week review",
       notes: "Interpret with cortisol and androgen panel.",
     },
@@ -1362,7 +1390,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     prescription: {
       medication: "Address metabolic drivers (insulin, thyroid, liver)",
       dosage: "Per findings",
-      frequency: "—",
+      frequency: "–",
       duration: "12-week review",
       notes: "SHBG follows insulin, thyroid, and liver status.",
     },
@@ -1377,7 +1405,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     prescription: {
       medication: "Adrenal workup: ACTH stimulation test",
       dosage: "Per protocol",
-      frequency: "—",
+      frequency: "–",
       duration: "4-week workup",
       notes: "Avoid extreme stress the day before the recheck.",
     },
@@ -1387,7 +1415,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     icd10: "E88.4",
     severity: severityOf(r),
     system: "cardiovascular",
-    explanation: `Homocysteine ${r.value} µmol/L is above the 5–15 reference range — an independent cardiovascular risk factor.`,
+    explanation: `Homocysteine ${r.value} µmol/L is above the 5–15 reference range – an independent cardiovascular risk factor.`,
     prescription: {
       medication: "Folic Acid + B12 + B6",
       dosage: "5mg + 1000mcg + 50mg",
@@ -1405,7 +1433,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     prescription: {
       medication: "Urology consult + free/total PSA ratio",
       dosage: "Per protocol",
-      frequency: "—",
+      frequency: "–",
       duration: "4-week workup",
       notes: "PSA can be transiently elevated by UTI or ejaculation.",
     },
@@ -1420,7 +1448,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     prescription: {
       medication: "Growth hormone axis review",
       dosage: "Per specialist",
-      frequency: "—",
+      frequency: "–",
       duration: "8-week review",
       notes: "Interpret with age and liver function.",
     },
@@ -1447,7 +1475,7 @@ const RX: Record<string, (row: LabRow) => LabFinding> = {
     icd10: "D64.9",
     severity: 1,
     system: "nutritional",
-    explanation: `PDW ${r.value} fL is outside the 9–17 reference range — variable red cell sizes suggest mixed or early nutritional deficiency.`,
+    explanation: `PDW ${r.value} fL is outside the 9–17 reference range – variable red cell sizes suggest mixed or early nutritional deficiency.`,
     prescription: {
       medication: "Multivitamin with iron + B12 + folate",
       dosage: "1 capsule",
@@ -1534,7 +1562,7 @@ export function parseLabReport(text: string): LabResult | null {
     };
   });
 
-  /* Care actions — one per finding, ranked by severity */
+  /* Care actions – one per finding, ranked by severity */
   const actions: CareAction[] = findings
     .map((f) => ({
       title: f.name,
@@ -1544,7 +1572,7 @@ export function parseLabReport(text: string): LabResult | null {
       improves: f.system,
     }));
 
-  /* Supplement plan — deduped from prescriptions */
+  /* Supplement plan – deduped from prescriptions */
   const supMap = new Map<string, Supplement>();
   const supplementFrom = (f: LabFinding) => {
     const p = f.prescription;
