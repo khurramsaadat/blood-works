@@ -553,8 +553,8 @@ export default function AssistantChat({
               }
             }}
             placeholder="Ask Sai about your results…"
-            rows={Math.min(4, Math.max(1, input.split("\n").length))}
-            className="flex-1 min-w-0 bg-transparent text-sm placeholder:text-muted/70 focus:outline-none resize-none leading-snug max-h-24"
+            rows={Math.min(5, Math.max(1, input.split("\n").length))}
+            className="flex-1 min-w-0 bg-transparent text-sm placeholder:text-muted/70 focus:outline-none resize-none leading-snug max-h-32"
           />
           {micSupported && (
             <button
