@@ -1,6 +1,7 @@
 import { EdgeTTS } from "@andresaya/edge-tts";
 
 const ALLOWED_VOICES = [
+  "en-US-AshleyNeural",
   "en-US-AriaNeural",
   "en-US-JennyNeural",
   "en-US-SaraNeural",

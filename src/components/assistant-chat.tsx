@@ -170,7 +170,7 @@ export default function AssistantChat({
   const [followUps, setFollowUps] = useState<string[]>([]);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
   const [ttsLoading, setTtsLoading] = useState(false);
-  const [ttsVoice, setTtsVoice] = useState("en-US-AriaNeural");
+  const [ttsVoice, setTtsVoice] = useState("en-US-AshleyNeural");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [ttsMuted, setTtsMuted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -848,6 +848,7 @@ export default function AssistantChat({
             }}
             className="text-[10px] rounded-md border border-border-c bg-background px-2 py-1 text-muted focus:outline-none focus:border-accent"
           >
+            <option value="en-US-AshleyNeural">Ashley (American female) - recommended</option>
             <option value="en-US-AriaNeural">Aria (American female)</option>
             <option value="en-US-JennyNeural">Jenny (American female)</option>
             <option value="en-US-SaraNeural">Sara (American female)</option>
