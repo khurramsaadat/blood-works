@@ -673,9 +673,10 @@ export default function AssistantChat({
                 <ActionIcon label="Share reply" onClick={() => exportReply(m, "share")}>{ICON.share}</ActionIcon>
                 <ActionIcon label="Read aloud" onClick={() => speak(i, m.content)}>
                   {speakingIdx === i ? (
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="6" y="6" width="12" height="12" rx="1" />
-                    </svg>
+                    <span className="relative flex h-3 w-3">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+                      <span className="relative inline-flex h-3 w-3 rounded-full bg-accent" />
+                    </span>
                   ) : (
                     ICON.speaker
                   )}
@@ -760,7 +761,8 @@ export default function AssistantChat({
             rows={1}
             className="flex-1 min-w-0 bg-transparent text-sm placeholder:text-muted/70 focus:outline-none resize-none leading-snug max-h-32 overflow-y-auto"
           />
-          {micSupported && (
+          <div className="flex flex-col gap-1 shrink-0">
+            {micSupported && (
             <button
               onClick={toggleMic}
               disabled={localStage === "working"}
@@ -805,12 +807,22 @@ export default function AssistantChat({
                 setTtsMuted(true);
               }
             }}
-            title={ttsMuted ? "Unmute read-aloud" : "Mute read-aloud"}
-            aria-label={ttsMuted ? "Unmute read-aloud" : "Mute read-aloud"}
-            className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 text-muted hover:text-accent-deep hover:bg-soft transition-colors"
+            title={ttsMuted ? "Unmute read-aloud" : speakingIdx !== null ? "Speaking..." : "Mute read-aloud"}
+            aria-label={ttsMuted ? "Unmute read-aloud" : speakingIdx !== null ? "Stop read-aloud" : "Mute read-aloud"}
+            className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 text-muted hover:text-accent-deep hover:bg-soft transition-colors relative ${speakingIdx !== null ? "animate-pulse text-accent-deep" : ""}`}
           >
-            {ttsMuted ? ICON.volumeOff : ICON.speaker}
+            {speakingIdx !== null ? (
+              <span className="relative flex h-3 w-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-accent" />
+              </span>
+            ) : ttsMuted ? (
+              ICON.volumeOff
+            ) : (
+              ICON.speaker
+            )}
           </button>
+          </div>
           <button
             onClick={() => send(input)}
             disabled={busy || !input.trim()}
