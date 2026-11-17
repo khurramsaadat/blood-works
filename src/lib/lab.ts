@@ -159,8 +159,11 @@ function plausibleValue(raw: string, test: LabTest): number | null {
   if (!Number.isFinite(v) || v <= 0) return null;
   const intPart = cleaned.split(".")[0];
   if (intPart.length > 6) return null;
-  // Labs that report WBC/platelets as absolute counts (e.g. 13500)
-  if (v > test.high * 100 && v / 1000 <= test.high) return v / 1000;
+  // Labs that report WBC/platelets as absolute counts (e.g. 13500) instead of
+  // thousands. Keep a wide ceiling so a raised count such as 11,600 still
+  // converts to 11.6 rather than being rejected as out of range.
+  const scaled = v / 1000;
+  if (v >= 1000 && scaled <= test.high * 3) return Math.round(scaled * 100) / 100;
   return v;
 }
 

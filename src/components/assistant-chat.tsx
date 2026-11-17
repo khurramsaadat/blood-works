@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Markdown from "@/components/markdown";
+import { transcribeBlob } from "@/lib/transcribe";
 import { buildSaiTranscript, copyText, downloadText, reportStamp, shareText } from "@/lib/report-export";
 import type { ChatMsg } from "@/lib/sessions";
 
@@ -123,20 +124,46 @@ export default function AssistantChat({
   const [toast, setToast] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
+  const [localStage, setLocalStage] = useState<"idle" | "recording" | "working">("idle");
+  const [localHint, setLocalHint] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<Rec | null>(null);
   const micBaseRef = useRef("");
+  // On-device fallback (MediaRecorder + Whisper in the browser).
+  const mediaRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const stopTimerRef = useRef<number | null>(null);
+  const speechFailed = useRef(false);
+  const micModeRef = useRef<"speech" | "local">("speech");
   const ctxRef = useRef(context);
   ctxRef.current = context;
 
   // Feature-detect on mount only, so the server and first client render match
-  // (avoids a hydration mismatch for the mic button).
+  // (avoids a hydration mismatch for the mic button). The mic is available if
+  // either Web Speech or in-browser recording works.
   useEffect(() => {
-    setMicSupported(!!getRecognition());
+    const speech = !!getRecognition();
+    const recorder =
+      typeof navigator !== "undefined" &&
+      !!navigator.mediaDevices?.getUserMedia &&
+      typeof MediaRecorder !== "undefined";
+    setMicSupported(speech || recorder);
+    try {
+      if (localStorage.getItem("bw.mic.local") === "1") {
+        speechFailed.current = true;
+        micModeRef.current = "local";
+      }
+    } catch {
+      /* storage blocked */
+    }
     return () => {
       try { recRef.current?.abort(); } catch { /* noop */ }
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+      try { mediaRef.current?.stop(); } catch { /* noop */ }
+      streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
@@ -197,15 +224,105 @@ export default function AssistantChat({
       .finally(() => setBusy(false));
   };
 
+  const stopLocalTracks = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    if (stopTimerRef.current) {
+      window.clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+  };
+
+  const finishLocal = async () => {
+    stopLocalTracks();
+    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+    chunksRef.current = [];
+    setLocalStage("working");
+    setLocalHint("Preparing on-device speech…");
+    try {
+      const text = await transcribeBlob(blob, setLocalHint);
+      if (text) {
+        const base = micBaseRef.current;
+        setInput(base ? `${base} ${text}` : text);
+        setError(null);
+      } else {
+        setToast("No speech detected – try again");
+      }
+    } catch {
+      setError(
+        "On-device transcription could not start. The first run downloads a small speech model, so check your connection and try once more."
+      );
+    } finally {
+      setLocalStage("idle");
+      setLocalHint("");
+      inputRef.current?.focus();
+    }
+  };
+
+  const startLocal = async () => {
+    setError(null);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("This browser cannot record audio. Type your question instead.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      streamRef.current = stream;
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "";
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => void finishLocal();
+      micBaseRef.current = input.trim();
+      rec.start();
+      mediaRef.current = rec;
+      setLocalStage("recording");
+      // Bound the clip so transcription stays quick on a laptop or phone.
+      stopTimerRef.current = window.setTimeout(() => {
+        try { rec.stop(); } catch { /* already stopped */ }
+      }, 30000);
+    } catch (e) {
+      const name = e instanceof DOMException ? e.name : "";
+      setError(
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "Microphone access is blocked. Allow the microphone in your browser, then try again."
+          : "No microphone was found on this device."
+      );
+    }
+  };
+
+  const stopLocal = () => {
+    if (stopTimerRef.current) {
+      window.clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+    try { mediaRef.current?.stop(); } catch { /* already stopped */ }
+  };
+
   const toggleMic = () => {
+    if (localStage === "recording") {
+      stopLocal();
+      return;
+    }
+    if (localStage === "working") return;
     if (listening) {
       try { recRef.current?.stop(); } catch { /* already stopped */ }
       setListening(false);
       return;
     }
     const rec = getRecognition();
-    if (!rec) {
-      setToast("Voice input is not supported in this browser");
+    if (micModeRef.current === "local") {
+      void startLocal();
+      return;
+    }
+    if (!rec || speechFailed.current) {
+      void startLocal();
       return;
     }
     setError(null);
@@ -235,12 +352,18 @@ export default function AssistantChat({
     rec.onerror = (e) => {
       setListening(false);
       const code = e.error ?? "";
-      if (code === "not-allowed" || code === "service-not-allowed") {
+      if (code === "network" || code === "language-not-supported") {
+        // The browser's speech service is unreachable (common on Chromium
+        // builds and some networks). Record and transcribe on the device
+        // instead; remember the choice so the next tap skips the dead path.
+        speechFailed.current = true;
+        micModeRef.current = "local";
+        try { localStorage.setItem("bw.mic.local", "1"); } catch { /* storage blocked */ }
+        void startLocal();
+      } else if (code === "not-allowed" || code === "service-not-allowed") {
         setError("Microphone access is blocked. Allow the microphone in your browser, then try again.");
       } else if (code === "audio-capture") {
         setError("No microphone was found on this device.");
-      } else if (code === "network") {
-        setError("Speech recognition needs a network connection.");
       } else if (code === "no-speech") {
         setToast("No speech detected – try again");
       } else if (code !== "aborted") {
@@ -284,7 +407,10 @@ export default function AssistantChat({
   };
 
   return (
-    <section className="relative flex h-full w-full flex-col bg-card border border-border-c rounded-2xl shadow-xl overflow-hidden">
+    <section
+      data-sai-panel
+      className="relative flex h-full w-full flex-col bg-card border border-border-c rounded-2xl shadow-xl overflow-hidden"
+    >
       <div className="shrink-0 px-5 py-3.5 border-b border-border-c flex items-center gap-2.5 bg-gradient-to-r from-soft to-card">
         <span className="h-8 w-8 rounded-full bg-brand-deep flex items-center justify-center text-white text-sm font-bold shadow-sm">
           S
@@ -433,13 +559,32 @@ export default function AssistantChat({
           {micSupported && (
             <button
               onClick={toggleMic}
-              title={listening ? "Stop listening" : "Dictate your question"}
-              aria-label={listening ? "Stop listening" : "Dictate your question"}
-              aria-pressed={listening}
-              className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                listening
+              disabled={localStage === "working"}
+              title={
+                localStage === "recording"
+                  ? "Stop and transcribe"
+                  : localStage === "working"
+                    ? "Transcribing on this device"
+                    : listening
+                      ? "Stop listening"
+                      : "Dictate your question"
+              }
+              aria-label={
+                localStage === "recording"
+                  ? "Stop recording and transcribe"
+                  : localStage === "working"
+                    ? "Transcribing on this device"
+                    : listening
+                      ? "Stop listening"
+                      : "Dictate your question"
+              }
+              aria-pressed={listening || localStage === "recording"}
+              className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors disabled:cursor-wait ${
+                listening || localStage === "recording"
                   ? "bg-red-500 text-white animate-pulse"
-                  : "text-muted hover:text-accent-deep hover:bg-soft"
+                  : localStage === "working"
+                    ? "bg-soft text-accent-deep"
+                    : "text-muted hover:text-accent-deep hover:bg-soft"
               }`}
             >
               {ICON.mic}
@@ -454,7 +599,13 @@ export default function AssistantChat({
           </button>
         </div>
         <p className="text-[10px] text-muted mt-1.5 px-1">
-          {listening ? "Listening… speak now, your words appear above" : "Enter to send · Shift + Enter for a new line"}
+          {localStage === "recording"
+            ? "Recording on this device – speak, then tap the mic to stop"
+            : localStage === "working"
+              ? localHint || "Transcribing on this device…"
+              : listening
+                ? "Listening… speak now, your words appear above"
+                : "Enter to send · Shift + Enter for a new line"}
         </p>
       </div>
     </section>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Tesseract from "tesseract.js";
 import { usePathname } from "next/navigation";
 import AssistantChat from "@/components/assistant-chat";
+import InstallPrompt from "@/components/site/install-prompt";
 import { parseLabReport, type LabResult } from "@/lib/lab";
 import { buildReportText, shareText } from "@/lib/report-export";
 import { downloadPdfReport } from "@/lib/pdf-report";
@@ -15,6 +16,7 @@ import {
   type ChatMsg,
   type SavedSession,
 } from "@/lib/sessions";
+import { SAMPLES, isSampleId } from "@/lib/samples";
 
 /* ---------------- Symptom knowledge base ---------------- */
 
@@ -402,16 +404,30 @@ export default function SymptomChecker() {
   /* ---------------- Session persistence (localStorage) ---------------- */
   const [sessions, setSessions] = useState<SavedSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [isSample, setIsSample] = useState(false);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const hydrated = useRef(false);
   // Guards against interleaved OCR runs: only the most recent upload may
   // write to the OCR/analysis state.
   const ocrRun = useRef(0);
 
-  // Hydrate the most recent session on mount (client only).
+  // Hydrate the most recent session on mount (client only). A ?sample= link
+  // opens a built-in transcript instead, so the homepage can show a real
+  // analysis without asking for an upload first.
   useEffect(() => {
     const list = loadSessions();
     setSessions(list);
+    const sampleId = new URLSearchParams(window.location.search).get("sample");
+    if (isSampleId(sampleId)) {
+      const sample = SAMPLES[sampleId];
+      setOcr({ status: "done", text: sample.ocrText, image: "" });
+      setAnalysis(analyzeAll(sample.ocrText));
+      setActiveId(`sample-${sample.id}`);
+      setIsSample(true);
+      setTab("report");
+      hydrated.current = true;
+      return;
+    }
     const latest = list[0];
     if (latest) {
       applySession(latest);
@@ -446,7 +462,7 @@ export default function SymptomChecker() {
   };
 
   const saveCurrent = useCallback(() => {
-    if (!hydrated.current || !activeId) return;
+    if (!hydrated.current || !activeId || isSample) return;
     const id = activeId;
     const now = new Date().toISOString();
     const kind: "lab" | "symptom" = ocr.status === "done" ? "lab" : "symptom";
@@ -462,7 +478,7 @@ export default function SymptomChecker() {
       chat,
     };
     setSessions(upsertSession(next));
-  }, [activeId, ocr, analysis, input, chat]);
+  }, [activeId, ocr, analysis, input, chat, isSample]);
 
   // Persist whenever the current work changes.
   useEffect(() => {
@@ -472,6 +488,7 @@ export default function SymptomChecker() {
   const startNewSession = () => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setActiveId(id);
+    setIsSample(false);
     setOcr({ status: "idle" });
     setAnalysis(null);
     setInput("");
@@ -481,6 +498,7 @@ export default function SymptomChecker() {
 
   const openSession = (s: SavedSession) => {
     applySession(s);
+    setIsSample(false);
     setTab(s.kind === "symptom" ? "symptom" : "report");
     setSaiOpenMobile(false);
   };
@@ -508,6 +526,7 @@ export default function SymptomChecker() {
       .then((image) => {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         setActiveId(id);
+        setIsSample(false);
         setOcr({ status: "loading", image });
         setChat([]);
         setTab("report");
@@ -523,6 +542,31 @@ export default function SymptomChecker() {
     const t = setTimeout(() => setToast(null), 2200);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Keyboard-first upload: a screenshot on the clipboard pastes straight into
+  // the OCR flow. Text fields and the Sai panel keep their normal paste so a
+  // pasted report excerpt still lands in the composer.
+  const pasteOcr = useRef(newOcr);
+  pasteOcr.current = newOcr;
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-sai-panel], input, textarea, [contenteditable='true']")) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        e.preventDefault();
+        pasteOcr.current(file);
+        setToast("Reading pasted screenshot…");
+        return;
+      }
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
 
   const exportReport = async (mode: "download" | "share") => {
     if (!lab) {
@@ -835,6 +879,45 @@ export default function SymptomChecker() {
           {/* Mobile header */}
           <div className="lg:hidden mb-5">{sidebar}</div>
 
+          {/* Compact summary pinned under the navbar while the report scrolls */}
+          {tab === "report" && lab && overallScore !== null && (
+            <div className="sticky top-16 z-20 mb-4 rounded-xl border border-border-c bg-background/95 px-4 py-2.5 shadow-sm backdrop-blur">
+              <div className="flex items-center gap-3">
+                <div className="relative shrink-0">
+                  <ScoreRing score={overallScore} size={32} />
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-foreground">
+                    {overallScore}
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-foreground">
+                    {lab.primary ? lab.primary.name : "All values in range"}
+                    {lab.primary && (
+                      <span className="ml-1.5 font-mono text-[10px] font-normal text-muted">
+                        {lab.primary.icd10}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-[10px] text-muted">
+                    Overall {overallScore}% ·{" "}
+                    {outOfRange === 0
+                      ? "all values in range"
+                      : `${outOfRange} value${outOfRange > 1 ? "s" : ""} out of range`}
+                  </p>
+                </div>
+                {ocr.status === "done" && ocr.image && (
+                  <button
+                    type="button"
+                    onClick={() => setViewImage(ocr.image ?? null)}
+                    className="hidden shrink-0 rounded-lg border border-border-c px-2.5 py-1.5 text-[11px] font-medium text-muted transition-colors hover:border-accent hover:text-accent-deep sm:inline-flex"
+                  >
+                    View report
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Tabs (all screens) */}
           <div className="inline-flex gap-1 bg-card border border-border-c rounded-xl p-1 shadow-sm mb-5">
             <button
@@ -915,36 +998,49 @@ export default function SymptomChecker() {
                 {ocr.status === "done" ? (
                   <div className="space-y-4">
                     <div className="flex items-start gap-4">
-                      <button
-                        type="button"
-                        onClick={() => setViewImage(ocr.image)}
-                        title="View the report you uploaded"
-                        aria-label="View the uploaded report"
-                        className="group relative h-24 w-24 shrink-0 rounded-lg overflow-hidden border border-border-c focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                      >
-                        <img
-                          src={ocr.image}
-                          alt="Uploaded medical report"
-                          className="h-full w-full object-cover"
-                        />
-                        <span className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center">
-                          <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-semibold tracking-wide uppercase">
-                            View
+                      {ocr.image ? (
+                        <button
+                          type="button"
+                          onClick={() => setViewImage(ocr.image)}
+                          title="View the report you uploaded"
+                          aria-label="View the uploaded report"
+                          className="group relative h-24 w-24 shrink-0 rounded-lg overflow-hidden border border-border-c focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                          <img
+                            src={ocr.image}
+                            alt="Uploaded medical report"
+                            className="h-full w-full object-cover"
+                          />
+                          <span className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-semibold tracking-wide uppercase">
+                              View
+                            </span>
                           </span>
-                        </span>
-                      </button>
+                        </button>
+                      ) : (
+                        <div className="h-24 w-24 shrink-0 rounded-lg border border-dashed border-border-c bg-soft flex flex-col items-center justify-center px-2 text-center">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-accent-deep">
+                            Sample
+                          </span>
+                          <span className="mt-1 text-[9px] leading-tight text-muted">
+                            no image attached
+                          </span>
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-xs text-muted uppercase tracking-wide mb-1">
                             Extracted text – fix any misreads, analysis updates live
                           </p>
-                          <button
-                            type="button"
-                            onClick={() => setViewImage(ocr.image)}
-                            className="shrink-0 text-[11px] font-medium text-accent-deep hover:underline"
-                          >
-                            View report
-                          </button>
+                          {ocr.image && (
+                            <button
+                              type="button"
+                              onClick={() => setViewImage(ocr.image)}
+                              className="shrink-0 text-[11px] font-medium text-accent-deep hover:underline"
+                            >
+                              View report
+                            </button>
+                          )}
                         </div>
                         <textarea
                           value={ocr.text}
@@ -979,7 +1075,9 @@ export default function SymptomChecker() {
                         Remove report
                       </button>
                       <span className="ml-auto text-[11px] text-muted">
-                        Saved to this device · shown in “Your reports”
+                        {isSample
+                          ? "Sample data · upload your own report to save it here"
+                          : "Saved to this device · shown in “Your reports”"}
                       </span>
                     </div>
                   </div>
@@ -991,7 +1089,7 @@ export default function SymptomChecker() {
                     >
                       Drop a screenshot here, or click to browse
                       <span className="block mt-1 text-xs text-muted">
-                        PNG / JPG – OCR runs entirely in your browser
+                        PNG / JPG · or paste a screenshot with Ctrl/Cmd + V
                       </span>
                     </button>
 
@@ -1014,6 +1112,10 @@ export default function SymptomChecker() {
                   </>
                 )}
               </div>
+            )}
+
+            {tab === "report" && (
+              <InstallPrompt show={!!lab && ocr.status === "done" && !isSample} />
             )}
 
             {/* ============ SYMPTOM ENTRY ============ */}

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 
 type Block =
   | { h: string }
@@ -14,11 +15,13 @@ export default function ContentPage({
   intro,
   blocks,
   updated,
+  children,
 }: {
   title: string;
   intro: string;
   blocks: Block[];
   updated?: string;
+  children?: ReactNode;
 }) {
   return (
     <div className="flex-1">
@@ -60,6 +63,7 @@ export default function ContentPage({
             )
           )}
         </div>
+        {children && <div className="mt-10">{children}</div>}
       </div>
     </div>
   );

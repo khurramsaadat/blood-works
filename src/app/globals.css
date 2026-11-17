@@ -97,8 +97,23 @@ h1, h2, h3, h4 {
   animation: bw-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@keyframes bw-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.bw-fade {
+  animation: bw-fade 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .bw-fade-up {
+  .bw-fade-up,
+  .bw-fade {
     animation: none;
   }
   html {

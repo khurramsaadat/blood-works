@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { LogoMark } from "@/components/site/logo";
+import HeroPreview from "@/components/site/hero-preview";
 
 const STATS = [
   { value: "60+", label: "biomarkers decoded" },
@@ -79,98 +79,6 @@ const FAQS = [
   },
 ];
 
-function HeroMock() {
-  const bars = [
-    { name: "Heart Health", v: 82 },
-    { name: "Metabolic Health", v: 64 },
-    { name: "Liver Health", v: 91 },
-    { name: "Kidney Health", v: 77 },
-  ];
-  const rows = [
-    { t: "Neutrophils", v: "65.3", s: "Normal" },
-    { t: "Lymphocytes", v: "23.2", s: "Normal" },
-    { t: "ESR", v: "50", s: "High" },
-  ];
-  return (
-    <div className="relative">
-      <div className="absolute -top-6 -right-4 hidden rotate-2 rounded-xl border border-border-c bg-card p-3 shadow-sm sm:block">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-deep text-xs font-bold text-white">
-            S
-          </span>
-          <div>
-            <p className="text-[11px] font-semibold text-foreground">Sai</p>
-            <p className="max-w-[180px] text-[11px] leading-snug text-muted">
-              ESR is 50, above range – that is the one thing to follow up.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-border-c bg-card p-5 shadow-xl">
-        <div className="flex items-center justify-between border-b border-border-c pb-4">
-          <div className="flex items-center gap-2.5">
-            <LogoMark className="h-8 w-8 rounded-lg" />
-            <div>
-              <p className="text-xs font-bold text-foreground">Full panel decoded</p>
-              <p className="text-[10px] text-muted">18 values matched · 2 out of range</p>
-            </div>
-          </div>
-          <span className="rounded-full bg-soft px-2.5 py-1 text-[10px] font-semibold text-accent-deep">
-            ✓ report loaded
-          </span>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          {bars.map((b) => (
-            <div key={b.name}>
-              <div className="mb-1 flex items-center justify-between text-[11px]">
-                <span className="font-medium text-foreground">{b.name}</span>
-                <span className="font-mono text-muted">{b.v}%</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-soft">
-                <div
-                  className="h-full rounded-full bg-accent-bright"
-                  style={{ width: `${b.v}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 space-y-1.5 border-t border-border-c pt-4">
-          {rows.map((r) => (
-            <div key={r.t} className="flex items-center justify-between rounded-lg bg-soft/60 px-3 py-2">
-              <span className="text-[11px] font-medium text-foreground">{r.t}</span>
-              <span className="flex items-center gap-2">
-                <span className="font-mono text-[11px] text-foreground">{r.v}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${
-                    r.s === "High"
-                      ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                      : "bg-soft text-accent-deep"
-                  }`}
-                >
-                  {r.s}
-                </span>
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-            </svg>
-          </span>
-          <p className="text-[11px] text-muted">Download the full analysis · Share it anywhere</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Home() {
   return (
     <div className="flex-1">
@@ -201,7 +109,7 @@ export default function Home() {
               Free to try · No sign-up · Your image never leaves this device
             </p>
           </div>
-          <HeroMock />
+          <HeroPreview />
         </div>
 
         {/* Stats strip */}

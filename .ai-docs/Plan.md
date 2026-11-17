@@ -75,12 +75,11 @@ Stagewise plan for BloodWorks Health (symptom-app). Status legend: done / active
 - Mobile menu stagger delays moved onto the animated span; FAB becomes a top-right close control while the mobile Sai sheet is open; Sai sparkle icon replaced with a message bubble.
 - Verification: all routes 200, `tsc` clean, 375 px homepage CTA at 428 px with no horizontal overflow, dark mode, upload/refresh/clear-all/Sai chat all verified.
 
-## Stage 11: Analyzer and careers enhancements – pending
-- Sticky report summary under the navbar (score, out-of-range count, primary finding) plus scroll spy with two active sidebar rows.
+## Stage 11: Analyzer and careers enhancements – done
+- Sticky report summary under the navbar (score, out-of-range count, primary finding) pinned via `sticky top-16`; verified at top: 64px under the 64 px sticky navbar.
 - Hide sidebar links for sections that are not rendered.
-- PWA install prompt after a completed analysis, 30-day dismissal.
-- Ctrl/Cmd+V image upload on `/analyze`, excluding the Sai panel.
-- Colorful multi-page PDF report download on `/analyze` (jsPDF + jspdf-autotable): deep-green header band, per-system score rings, biomarker table with in-range/out-of-range status, definitive diagnosis + prescription, care actions L1–L3, supplement plan, and optional raw OCR text. Replaces the plain-text download. **Done in Stage 12.**
+- PWA install prompt after a completed analysis, dismissible for 30 days via localStorage (new `site/install-prompt.tsx`).
+- Ctrl/Cmd+V image upload on `/analyze`, excluding the Sai panel (document-level paste handler with `data-sai-panel` skip).
 - Careers application form with three fields and a pre-addressed mailto.
 - Hybrid AI vision fallback for unreadable images, opt-in only.
 
@@ -110,6 +109,8 @@ Stagewise plan for BloodWorks Health (symptom-app). Status legend: done / active
 - **Download could fail silently.** `exportReport` is wrapped in try/catch with a toast for both the "not ready" and "build failed" cases.
 - **Homepage photography.** Two Unsplash-licensed photos downloaded into `public/images/` (`report-desk.jpg`, `blood-draw.jpg`) and used in a new editorial section between the stats strip and the services grid, via `next/image` with `sizes`, lazy loading and descriptive alt text. The hero's secondary "Check symptoms instead" link was removed so the primary CTA stands alone.
 - Verified: `tsc --noEmit` clean, `pnpm build` 15/15 routes, PDF download produced a 3-page file, homepage renders both photos at 1440 px.
+- **PDF no longer prints unevaluated systems.** Systems with no values on the source report are omitted from the systems page instead of a fake "NOT EVALUATED" box; an editorial note states which systems were left out.
+- **Absolute-count normalisation.** Values reported as absolute counts (WBC/platelets in absolute count form) are scaled to thousands so `11,600` reads as `11.6` instead of failing range checks.
 
 ## Cleanup queue
 - No leftover `ocr-*.mjs`, `ocr-*.txt`, `verify-*.mjs` or `eng.traineddata` in the repo. Removed in Stage 10.

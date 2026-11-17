@@ -156,57 +156,51 @@ function buildSystemsPage(doc: jsPDF, lab: LabResult): number {
   let y = headerPage(doc, "System Health Scores", reportStamp()) + 10;
   y = sectionHeading(doc, y, "SYSTEM HEALTH SCORES");
 
+  // Only systems that actually had values on this report are scored. Systems
+  // with no matching biomarker are omitted rather than printed as "not
+  // evaluated", so the page reads as a result, not a form.
+  const evaluated = lab.systems.filter((s) => s.total > 0);
   const colW = (doc.internal.pageSize.getWidth() - 32) / 3;
   const cellH = 58;
-  const rowsCount = Math.ceil(lab.systems.length / 3);
+  const rowsCount = Math.ceil(evaluated.length / 3);
   for (let r = 0; r < rowsCount; r++) {
     y = ensureSpace(doc, y, cellH);
     const baseY = y;
     for (let c = 0; c < 3; c++) {
       const i = r * 3 + c;
-      if (i >= lab.systems.length) break;
-      const s = lab.systems[i];
+      if (i >= evaluated.length) break;
+      const s = evaluated[i];
       const x = 16 + c * colW + 10;
-      const empty = s.total === 0;
       const status: Status = s.status === "in" ? "normal" : s.status === "watch" ? "watch" : "out";
       const color = STATUS_COLOR[status];
 
-      if (empty) {
-        doc.setDrawColor(LINE);
-        doc.setLineWidth(0.7);
-        doc.roundedRect(x, baseY, 40, 40, 4, 4, "S");
-        doc.setFontSize(7.5);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(MUTED);
-        doc.text("NOT", x + 20, baseY + 18, { align: "center" });
-        doc.text("EVALUATED", x + 20, baseY + 26, { align: "center" });
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(INK);
-        doc.text(s.name, x + 46, baseY + 10, { maxWidth: colW - 56 });
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(MUTED);
-        doc.text("No values for this system", x + 46, baseY + 22);
-        doc.text("–", x + 46, baseY + 36);
-      } else {
-        const img = ringPng(s.score, color);
-        if (img) doc.addImage(img, "PNG", x, baseY, 40, 40);
-        doc.setFontSize(10);
-        doc.setTextColor(INK);
-        doc.setFont("helvetica", "bold");
-        doc.text(s.name, x + 46, baseY + 10, { maxWidth: colW - 56 });
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(MUTED);
-        doc.text(`${s.abnormal} of ${s.total} out of range  ·  ${status.toUpperCase()}`, x + 46, baseY + 22);
-        doc.setFontSize(16);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(color);
-        doc.text(`${s.score}%`, x + 46, baseY + 36);
-      }
+      const img = ringPng(s.score, color);
+      if (img) doc.addImage(img, "PNG", x, baseY, 40, 40);
+      doc.setFontSize(10);
+      doc.setTextColor(INK);
+      doc.setFont("helvetica", "bold");
+      doc.text(s.name, x + 46, baseY + 10, { maxWidth: colW - 56 });
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(MUTED);
+      doc.text(`${s.abnormal} of ${s.total} out of range  ·  ${status.toUpperCase()}`, x + 46, baseY + 22);
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(color);
+      doc.text(`${s.score}%`, x + 46, baseY + 36);
     }
     y = baseY + cellH + 8;
+  }
+  if (evaluated.length < lab.systems.length) {
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(MUTED);
+    doc.text(
+      "Systems without values on this report are omitted.",
+      16,
+      y
+    );
+    y += 10;
   }
   return y;
 }
