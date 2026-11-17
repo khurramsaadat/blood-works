@@ -829,35 +829,26 @@ export default function AssistantChat({
               ICON.speaker
             )}
           </button>
-          <button
-            type="button"
-            onClick={() => { setAutoRead((v) => { const nv = !v; try { localStorage.setItem("bw.tts.autoread", nv ? "1" : "0"); } catch { /* storage blocked */ } return nv; }); }}
-            title={autoRead ? "Auto-read on" : "Auto-read off"}
-            aria-label={autoRead ? "Disable auto-read" : "Enable auto-read"}
-            aria-pressed={autoRead}
-            className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${autoRead ? "bg-accent/15 text-accent-deep" : "text-muted hover:text-accent-deep hover:bg-soft"}`}
-          >
-            <span className="text-[9px] font-bold">AR</span>
-          </button>
           </div>
-          <button
-            onClick={() => send(input)}
-            disabled={busy || !input.trim()}
-            className="shrink-0 bg-accent hover:bg-brand-deep disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-lg px-3.5 py-2 text-sm transition-colors"
-          >
-            Send
-          </button>
-        </div>
-        <div className="mt-1.5 flex items-center gap-2 px-1">
-          <span className="text-[10px] text-muted">Voice: Jenny (American female)</span>
-          <a
-            href="https://speech.microsoft.com/portal/voicegallery"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[10px] text-muted hover:text-accent-deep underline"
-          >
-            Explore more voices
-          </a>
+          <div className="flex flex-col gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => { setAutoRead((v) => { const nv = !v; try { localStorage.setItem("bw.tts.autoread", nv ? "1" : "0"); } catch { /* storage blocked */ } return nv; }); }}
+              title={autoRead ? "Auto-read on" : "Auto-read off"}
+              aria-label={autoRead ? "Disable auto-read" : "Enable auto-read"}
+              aria-pressed={autoRead}
+              className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-semibold transition-colors ${autoRead ? "bg-accent/15 text-accent-deep border border-accent/30" : "text-muted border border-border-c hover:text-accent-deep hover:border-accent"}`}
+            >
+              {autoRead ? "Auto-read on" : "Auto-read off"}
+            </button>
+            <button
+              onClick={() => send(input)}
+              disabled={busy || !input.trim()}
+              className="shrink-0 bg-accent hover:bg-brand-deep disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-lg px-3.5 py-2 text-sm transition-colors"
+            >
+              Send
+            </button>
+          </div>
         </div>
         <p className="text-[10px] text-muted mt-1.5 px-1">
           {localStage === "recording"
