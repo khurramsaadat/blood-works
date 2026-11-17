@@ -188,6 +188,8 @@ export default function AssistantChat({
     const t = text.trim();
     if (!t || busy) return;
     setInput("");
+    const el = inputRef.current;
+    if (el) el.style.height = "auto";
     setError(null);
     setBusy(true);
     onMessagesChange((m) => [...m, { role: "user", content: t }]);
@@ -545,7 +547,14 @@ export default function AssistantChat({
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              const el = inputRef.current;
+              if (el) {
+                el.style.height = "auto";
+                el.style.height = Math.min(el.scrollHeight, 128) + "px";
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -553,8 +562,8 @@ export default function AssistantChat({
               }
             }}
             placeholder="Ask Sai about your results…"
-            rows={Math.min(5, Math.max(1, input.split("\n").length))}
-            className="flex-1 min-w-0 bg-transparent text-sm placeholder:text-muted/70 focus:outline-none resize-none leading-snug max-h-32"
+            rows={1}
+            className="flex-1 min-w-0 bg-transparent text-sm placeholder:text-muted/70 focus:outline-none resize-none leading-snug max-h-32 overflow-y-auto"
           />
           {micSupported && (
             <button
