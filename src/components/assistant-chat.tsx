@@ -172,7 +172,6 @@ export default function AssistantChat({
   const [ttsLoading, setTtsLoading] = useState(false);
   const [autoRead, setAutoRead] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [ttsMuted, setTtsMuted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<Rec | null>(null);
@@ -495,7 +494,6 @@ export default function AssistantChat({
 
   const speak = async (idx: number, text: string) => {
     if (typeof window === 'undefined') return;
-    if (ttsMuted) return;
     if (speakingIdx === idx) {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       window.speechSynthesis?.cancel();
@@ -806,16 +804,12 @@ export default function AssistantChat({
           <button
             type="button"
             onClick={() => {
-              if (ttsMuted) {
-                setTtsMuted(false);
-              } else {
-                window.speechSynthesis?.cancel();
-                setSpeakingIdx(null);
-                setTtsMuted(true);
-              }
+              const idx = messages.length ? messages.length - 1 : -1;
+              const last = idx >= 0 ? messages[idx] : null;
+              if (last && last.role === "assistant") speak(idx, last.content);
             }}
-            title={ttsMuted ? "Unmute read-aloud" : speakingIdx !== null ? "Speaking..." : "Mute read-aloud"}
-            aria-label={ttsMuted ? "Unmute read-aloud" : speakingIdx !== null ? "Stop read-aloud" : "Mute read-aloud"}
+            title={speakingIdx !== null ? "Stop read-aloud" : "Read aloud"}
+            aria-label={speakingIdx !== null ? "Stop read-aloud" : "Read aloud"}
             className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 text-muted hover:text-accent-deep hover:bg-soft transition-colors relative ${speakingIdx !== null ? "animate-pulse text-accent-deep" : ""}`}
           >
             {speakingIdx !== null ? (
@@ -823,8 +817,6 @@ export default function AssistantChat({
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
                 <span className="relative inline-flex h-3 w-3 rounded-full bg-accent" />
               </span>
-            ) : ttsMuted ? (
-              ICON.volumeOff
             ) : (
               ICON.speaker
             )}
