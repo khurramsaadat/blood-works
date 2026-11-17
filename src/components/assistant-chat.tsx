@@ -170,7 +170,7 @@ export default function AssistantChat({
   const [followUps, setFollowUps] = useState<string[]>([]);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
   const [ttsLoading, setTtsLoading] = useState(false);
-  const [ttsVoice, setTtsVoice] = useState("en-US-AriaNeural");
+  const [autoRead, setAutoRead] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [ttsMuted, setTtsMuted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -189,12 +189,12 @@ export default function AssistantChat({
 
   useEffect(() => {
     try {
-      const v = localStorage.getItem("bw.tts.voice");
-      if (v) setTtsVoice(v);
+      if (localStorage.getItem("bw.tts.autoread") === "1") setAutoRead(true);
     } catch {
       /* storage blocked */
     }
   }, []);
+
   const nearBottomRef = useRef(true);
 
   // Feature-detect on mount only, so the server and first client render match
@@ -324,6 +324,7 @@ export default function AssistantChat({
         throw new Error("Assistant returned an empty response.");
       }
       setFollowUps(computeFollowUps(acc));
+      if (autoRead) speak(messages.length + 1, acc);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
       onMessagesChange((m) => {
@@ -511,7 +512,7 @@ export default function AssistantChat({
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: clean, voice: ttsVoice }),
+        body: JSON.stringify({ text: clean }),
       });
       if (!res.ok) throw new Error('TTS request failed');
       const blob = await res.blob();
@@ -828,6 +829,16 @@ export default function AssistantChat({
               ICON.speaker
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => { setAutoRead((v) => { const nv = !v; try { localStorage.setItem("bw.tts.autoread", nv ? "1" : "0"); } catch { /* storage blocked */ } return nv; }); }}
+            title={autoRead ? "Auto-read on" : "Auto-read off"}
+            aria-label={autoRead ? "Disable auto-read" : "Enable auto-read"}
+            aria-pressed={autoRead}
+            className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${autoRead ? "bg-accent/15 text-accent-deep" : "text-muted hover:text-accent-deep hover:bg-soft"}`}
+          >
+            <span className="text-[9px] font-bold">AR</span>
+          </button>
           </div>
           <button
             onClick={() => send(input)}
@@ -837,22 +848,17 @@ export default function AssistantChat({
             Send
           </button>
         </div>
-          <select
-            id="sai-voice"
-            value={ttsVoice}
-            onChange={(e) => {
-              setTtsVoice(e.target.value);
-              try { localStorage.setItem("bw.tts.voice", e.target.value); } catch { /* storage blocked */ }
-            }}
-            className="text-[10px] rounded-md border border-border-c bg-background px-2 py-1 text-muted focus:outline-none focus:border-accent"
+        <div className="mt-1.5 flex items-center gap-2 px-1">
+          <span className="text-[10px] text-muted">Voice: Jenny (American female)</span>
+          <a
+            href="https://speech.microsoft.com/portal/voicegallery"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] text-muted hover:text-accent-deep underline"
           >
-            <option value="en-US-AriaNeural">Aria (American female)</option>
-            <option value="en-US-JennyNeural">Jenny (American female)</option>
-            <option value="en-US-EmmaNeural">Emma (American female)</option>
-            <option value="en-US-AvaNeural">Ava (American female)</option>
-            <option value="en-US-MichelleNeural">Michelle (American female)</option>
-            <option value="en-US-AnaNeural">Ana (American female)</option>
-          </select>
+            Explore more voices
+          </a>
+        </div>
         <p className="text-[10px] text-muted mt-1.5 px-1">
           {localStage === "recording"
             ? "Recording on this device – speak, then tap the mic to stop"
