@@ -1490,6 +1490,7 @@ export default function SymptomChecker() {
         <aside className="hidden lg:block sticky top-20 h-[calc(100vh-6rem)]">
           <AssistantChat
             context={assistantContext}
+             labRows={lab ? lab.rows.map((r) => ({ label: r.test.label, value: String(r.value) })) : undefined}
             labSummary={
               lab
                 ? {
@@ -1528,6 +1529,7 @@ export default function SymptomChecker() {
           <div className="absolute bottom-4 right-4 left-4 top-auto h-[min(75vh,640px)] max-w-[420px] mx-auto sm:mx-0">
             <AssistantChat
               context={assistantContext}
+             labRows={lab ? lab.rows.map((r) => ({ label: r.test.label, value: String(r.value) })) : undefined}
               labSummary={
                 lab
                   ? {

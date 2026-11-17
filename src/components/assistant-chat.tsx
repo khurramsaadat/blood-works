@@ -6,6 +6,30 @@ import { transcribeBlob } from "@/lib/transcribe";
 import { buildSaiTranscript, copyText, downloadText, reportStamp, shareText } from "@/lib/report-export";
 import type { ChatMsg } from "@/lib/sessions";
 
+function computeFollowUps(text: string): string[] {
+  const low = text.toLowerCase();
+  const out: string[] = [];
+  if (low.includes("bun") || low.includes("creatinine") || low.includes("kidney") || low.includes("egfr")) {
+    out.push("What about hydration targets?", "When should I re-test BUN?");
+  }
+  if (low.includes("cholesterol") || low.includes("ldl") || low.includes("hdl") || low.includes("triglycer")) {
+    out.push("What foods help lower LDL?", "When should I re-check lipids?");
+  }
+  if (low.includes("thyroid") || low.includes("tsh")) {
+    out.push("What supports thyroid function?", "When should I re-test TSH?");
+  }
+  if (low.includes("supplement")) {
+    out.push("Which supplement should I take first?");
+  }
+  if (low.includes("glucose") || low.includes("hba1c") || low.includes("blood sugar")) {
+    out.push("What should I eat to steady glucose?", "When should I re-check HbA1c?");
+  }
+  if (out.length === 0) {
+    out.push("What do these results mean overall?", "Which supplement should I take first?", "What should I eat this week?");
+  }
+  return Array.from(new Set(out)).slice(0, 3);
+}
+
 const SUGGESTIONS = [
   "What do these results mean overall?",
   "Explain my highest priority finding in simple terms.",
@@ -69,6 +93,12 @@ const ICON = {
       <path d="M19 11a7 7 0 0 1-14 0 M12 18v4" />
     </svg>
   ),
+  speaker: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+    </svg>
+  ),
 };
 
 /* ---------------- Speech recognition (optional, feature-detected) ---------------- */
@@ -108,12 +138,14 @@ function getRecognition(): Rec | null {
 export default function AssistantChat({
   context,
   labSummary,
+  labRows,
   messages,
   onMessagesChange,
   onClearChat,
 }: {
   context: string;
   labSummary?: { primary: string; date: string } | null;
+  labRows?: { label: string; value: string }[];
   messages: ChatMsg[];
   onMessagesChange: (updater: (prev: ChatMsg[]) => ChatMsg[]) => void;
   onClearChat: () => void;
@@ -127,6 +159,8 @@ export default function AssistantChat({
   const [localStage, setLocalStage] = useState<"idle" | "recording" | "working">("idle");
   const [localHint, setLocalHint] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [followUps, setFollowUps] = useState<string[]>([]);
+  const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<Rec | null>(null);
@@ -140,6 +174,7 @@ export default function AssistantChat({
   const micModeRef = useRef<"speech" | "local">("speech");
   const ctxRef = useRef(context);
   ctxRef.current = context;
+  const nearBottomRef = useRef(true);
 
   // Feature-detect on mount only, so the server and first client render match
   // (avoids a hydration mismatch for the mic button). The mic is available if
@@ -169,7 +204,17 @@ export default function AssistantChat({
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const onScroll = () => {
+      nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [messages, busy]);
 
   useEffect(() => {
@@ -184,15 +229,17 @@ export default function AssistantChat({
     return () => clearTimeout(t);
   }, [confirmClear]);
 
-  const send = (text: string) => {
+  const send = async (text: string) => {
     const t = text.trim();
     if (!t || busy) return;
     setInput("");
     const el = inputRef.current;
     if (el) el.style.height = "auto";
     setError(null);
+    setFollowUps([]);
     setBusy(true);
     onMessagesChange((m) => [...m, { role: "user", content: t }]);
+    onMessagesChange((m) => [...m, { role: "assistant", content: "", reasoning: "" }]);
     const history = [
       ...messages.map((m) =>
         m.role === "assistant"
@@ -201,29 +248,78 @@ export default function AssistantChat({
       ),
       { role: "user", content: t },
     ];
-    fetch("/api/assistant", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        // Assistant turns carry reasoning_content verbatim – required by IFM
-        // reasoning models on every multi-turn request.
-        messages: history,
-        context: ctxRef.current,
-      }),
-    })
-      .then(async (res) => {
-        const data = (await res.json()) as { reply?: string; reasoning_content?: string; error?: string };
+    let acc = "";
+    let reasoning = "";
+    const commit = () => {
+      onMessagesChange((m) => {
+        const copy = [...m];
+        const last = copy[copy.length - 1];
+        if (last && last.role === "assistant") {
+          last.content = acc;
+          last.reasoning = reasoning;
+        }
+        return copy;
+      });
+    };
+    try {
+      const res = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history, context: ctxRef.current, stream: true }),
+      });
+      const ct = res.headers.get("content-type") ?? "";
+      if (!res.ok || !ct.includes("text/event-stream")) {
+        const data = (await res.json().catch(() => ({}))) as {
+          reply?: string;
+          reasoning_content?: string;
+          error?: string;
+        };
         if (!res.ok || data.error) throw new Error(data.error ?? "Assistant request failed.");
-        onMessagesChange((m) => [
-          ...m,
-          { role: "assistant", content: data.reply ?? "", reasoning: data.reasoning_content ?? "" },
-        ]);
-      })
-      .catch((e) => {
-        setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
-        onMessagesChange((m) => m.filter((x) => x.role !== "user" || x.content !== t));
-      })
-      .finally(() => setBusy(false));
+        acc = data.reply ?? "";
+        reasoning = data.reasoning_content ?? "";
+        commit();
+      } else {
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            try {
+              const j = JSON.parse(payload) as { content?: string; reasoning?: string; error?: string };
+              if (j.error) throw new Error(j.error);
+              if (j.content) acc += j.content;
+              if (j.reasoning) reasoning += j.reasoning;
+              commit();
+            } catch (e) {
+              if (e instanceof Error && e.message !== "JSON Parse error") throw e;
+            }
+          }
+        }
+      }
+      if (!acc.trim()) {
+        onMessagesChange((m) => m.filter((x, i) => !(i === m.length - 1 && x.role === "assistant" && !x.content.trim())));
+        throw new Error("Assistant returned an empty response.");
+      }
+      setFollowUps(computeFollowUps(acc));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+      onMessagesChange((m) => {
+        let out = m.filter((x, i) => !(i === m.length - 1 && x.role === "assistant" && !x.content.trim()));
+        const t = text.trim();
+        out = out.filter((x, i) => !(i === out.length - 1 && x.role === "user" && x.content === t));
+        return out;
+      });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const stopLocalTracks = () => {
@@ -381,6 +477,21 @@ export default function AssistantChat({
     }
   };
 
+  const speak = (idx: number, text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (speakingIdx === idx) {
+      window.speechSynthesis.cancel();
+      setSpeakingIdx(null);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text.replace(/[#*_`]/g, ""));
+    utter.onend = () => setSpeakingIdx(null);
+    utter.onerror = () => setSpeakingIdx(null);
+    setSpeakingIdx(idx);
+    window.speechSynthesis.speak(utter);
+  };
+
   const transcript = () => buildSaiTranscript(messages, labSummary);
 
   const exportConversation = async (mode: "download" | "share") => {
@@ -444,6 +555,7 @@ export default function AssistantChat({
                   return;
                 }
                 onClearChat();
+                setFollowUps([]);
                 setConfirmClear(false);
                 setToast("Conversation cleared");
               }}
@@ -511,11 +623,34 @@ export default function AssistantChat({
               )}
             </div>
             {m.role === "assistant" && (
-              <div className="mt-1 flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+              <div className="mt-1 flex flex-wrap items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                 <span className="text-[10px] text-muted mr-1">Reply:</span>
                 <ActionIcon label="Copy reply" onClick={() => exportReply(m, "copy")}>{ICON.copy}</ActionIcon>
                 <ActionIcon label="Download reply" onClick={() => exportReply(m, "download")}>{ICON.download}</ActionIcon>
                 <ActionIcon label="Share reply" onClick={() => exportReply(m, "share")}>{ICON.share}</ActionIcon>
+                <ActionIcon label="Read aloud" onClick={() => speak(i, m.content)}>
+                  {speakingIdx === i ? (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="6" y="6" width="12" height="12" rx="1" />
+                    </svg>
+                  ) : (
+                    ICON.speaker
+                  )}
+                </ActionIcon>
+                {labRows && labRows.length > 0 && (
+                  <>
+                    {labRows
+                      .filter((r) => m.content.includes(r.value))
+                      .map((r) => (
+                        <span
+                          key={r.label + r.value}
+                          className="ml-1 rounded-full border border-border-c bg-card px-2 py-0.5 text-[10px] font-mono text-muted"
+                        >
+                          {r.label} {r.value}
+                        </span>
+                      ))}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -529,6 +664,23 @@ export default function AssistantChat({
               <span className="h-1.5 w-1.5 rounded-full bg-muted/40 animate-pulse [animation-delay:300ms]" />
             </span>
             Thinking…
+          </div>
+        )}
+
+        {!busy && followUps.length > 0 && messages.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold tracking-widest uppercase text-muted">Follow up</p>
+            <div className="flex flex-col gap-2">
+              {followUps.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => send(f)}
+                  className="text-left text-xs border border-border-c hover:border-accent hover:text-accent-deep rounded-xl px-3.5 py-2.5 text-muted transition-colors"
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

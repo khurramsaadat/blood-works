@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Assistant is not configured (IFM_API_KEY missing)." }, { status: 500 });
   }
 
-  let body: { messages?: Msg[]; context?: string };
+  let body: { messages?: Msg[]; context?: string; stream?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -81,11 +81,115 @@ export async function POST(request: Request) {
     }),
   ];
 
+  const upstreamBody = JSON.stringify({
+    model,
+    messages,
+    temperature: 0.6,
+    top_p: 0.95,
+    max_tokens: 700,
+    stream: !!body.stream,
+  });
+
+  // ---- Streaming path (SSE) ----
+  if (body.stream) {
+    let res: Response;
+    try {
+      res = await fetch(`${base}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: upstreamBody,
+      });
+    } catch (e) {
+      return Response.json(
+        { error: `Could not reach the assistant: ${e instanceof Error ? e.message : "network error"}` },
+        { status: 502 }
+      );
+    }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      return Response.json(
+        { error: `Assistant error ${res.status}. ${errText.slice(0, 300)}`.trim() },
+        { status: 502 }
+      );
+    }
+    const ct = res.headers.get("content-type") ?? "";
+    const encoder = new TextEncoder();
+
+    // Non-SSE upstream: wrap the JSON reply in a single SSE frame.
+    if (!ct.includes("text/event-stream")) {
+      const data = (await res.json().catch(() => ({}))) as {
+        choices?: { message?: { content?: string; reasoning_content?: string | null } }[];
+      };
+      const content = data.choices?.[0]?.message?.content?.trim() ?? "";
+      const reasoning =
+        typeof data.choices?.[0]?.message?.reasoning_content === "string"
+          ? data.choices[0].message.reasoning_content
+          : "";
+      if (!content) {
+        return Response.json({ error: "Assistant returned an empty response." }, { status: 502 });
+      }
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content, reasoning })}\n\n`));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+    }
+
+    // SSE upstream: forward deltas.
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.startsWith("data:")) continue;
+              const payload = line.slice(5).trim();
+              if (!payload) continue;
+              if (payload === "[DONE]") {
+                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                continue;
+              }
+              try {
+                const j = JSON.parse(payload) as {
+                  choices?: { delta?: { content?: string; reasoning_content?: string } }[];
+                };
+                const delta = j.choices?.[0]?.delta ?? {};
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ content: delta.content ?? "", reasoning: delta.reasoning_content ?? "" })}\n\n`)
+                );
+              } catch {
+                /* skip malformed chunk */
+              }
+            }
+          }
+        } catch (e) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ error: e instanceof Error ? e.message : "stream error" })}\n\n`)
+          );
+        } finally {
+          controller.close();
+        }
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+  }
+
+  // ---- Non-streaming path (legacy) ----
   try {
     const res = await fetch(`${base}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages, temperature: 0.6, top_p: 0.95, max_tokens: 700 }),
+      body: upstreamBody,
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
