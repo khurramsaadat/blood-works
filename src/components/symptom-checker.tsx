@@ -372,8 +372,24 @@ export default function SymptomChecker() {
   const [saiOpenMobile, setSaiOpenMobile] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatMsg[]>([]);
+  const [viewImage, setViewImage] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
+
+  // Escape closes the report preview; lock the page behind the lightbox.
+  useEffect(() => {
+    if (!viewImage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setViewImage(null);
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [viewImage]);
 
   // /analyze must show the report tool and /symptoms the symptom tool, even
   // when the user arrives from the navbar/footer while the other tab was active.
@@ -400,7 +416,17 @@ export default function SymptomChecker() {
     if (latest) {
       applySession(latest);
       setActiveId(latest.id);
-      setTab(latest.kind === "symptom" ? "symptom" : "report");
+      // The route decides which tool is shown. On /analyze the report tab
+      // stays selected even when the last saved session was a symptom check.
+      setTab(
+        pathname === "/analyze"
+          ? "report"
+          : pathname === "/symptoms"
+            ? "symptom"
+            : latest.kind === "symptom"
+              ? "symptom"
+              : "report"
+      );
     }
     hydrated.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -499,15 +525,28 @@ export default function SymptomChecker() {
   }, [toast]);
 
   const exportReport = async (mode: "download" | "share") => {
-    if (!lab) return;
-    if (mode === "download") {
-      downloadPdfReport(lab, ocr.status === "done" ? ocr.text : undefined);
-      setToast("Report downloaded");
+    if (!lab) {
+      setToast("The analysis is still loading – try again in a moment");
       return;
     }
-    const text = buildReportText(lab, ocr.status === "done" ? ocr.text : undefined);
-    const r = await shareText(text, "BloodWorks Health – report analysis");
-    setToast(r === "shared" ? "Report shared" : "Report copied to clipboard");
+    try {
+      if (mode === "download") {
+        downloadPdfReport(lab, ocr.status === "done" ? ocr.text : undefined);
+        setToast("Report downloaded");
+        return;
+      }
+      const text = buildReportText(lab, ocr.status === "done" ? ocr.text : undefined);
+      const r = await shareText(text, "BloodWorks Health – report analysis");
+      setToast(r === "shared" ? "Report shared" : "Report copied to clipboard");
+    } catch (err) {
+      // Never fail silently: the user must see why the export did not start.
+      console.error("Report export failed", err);
+      setToast(
+        mode === "download"
+          ? "Could not build the PDF – please try again"
+          : "Could not share the report – please try again"
+      );
+    }
   };
 
   const runOcr = useCallback(async (file: File, image: string, run: number) => {
@@ -671,11 +710,18 @@ export default function SymptomChecker() {
                     onClick={() => openSession(s)}
                   >
                     {s.image ? (
-                      <img
-                        src={s.image}
-                        alt=""
-                        className="h-9 w-9 object-cover rounded-md border border-border-c shrink-0"
-                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewImage(s.image);
+                        }}
+                        title="View the uploaded report"
+                        aria-label="View the uploaded report"
+                        className="h-9 w-9 shrink-0 rounded-md overflow-hidden border border-border-c focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        <img src={s.image} alt="" className="h-full w-full object-cover" />
+                      </button>
                     ) : (
                       <span className="h-9 w-9 rounded-md bg-soft border border-border-c flex items-center justify-center shrink-0">
                         <Icon d={ICONS.symptom} className="text-accent-deep !w-4 !h-4" />
@@ -869,16 +915,37 @@ export default function SymptomChecker() {
                 {ocr.status === "done" ? (
                   <div className="space-y-4">
                     <div className="flex items-start gap-4">
-                      <img
-                        src={ocr.image}
-                        alt="Uploaded medical report"
-                        title="Your uploaded report – kept on this device"
-                        className="h-24 w-24 object-cover rounded-lg border border-border-c shrink-0"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setViewImage(ocr.image)}
+                        title="View the report you uploaded"
+                        aria-label="View the uploaded report"
+                        className="group relative h-24 w-24 shrink-0 rounded-lg overflow-hidden border border-border-c focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        <img
+                          src={ocr.image}
+                          alt="Uploaded medical report"
+                          className="h-full w-full object-cover"
+                        />
+                        <span className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center">
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-semibold tracking-wide uppercase">
+                            View
+                          </span>
+                        </span>
+                      </button>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-muted uppercase tracking-wide mb-1">
-                          Extracted text – fix any misreads, analysis updates live
-                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-muted uppercase tracking-wide mb-1">
+                            Extracted text – fix any misreads, analysis updates live
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setViewImage(ocr.image)}
+                            className="shrink-0 text-[11px] font-medium text-accent-deep hover:underline"
+                          >
+                            View report
+                          </button>
+                        </div>
                         <textarea
                           value={ocr.text}
                           onChange={(e) => {
@@ -1380,6 +1447,37 @@ export default function SymptomChecker() {
       {toast && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background text-xs rounded-full px-4 py-2 shadow-lg">
           {toast}
+        </div>
+      )}
+
+      {/* ============ FULL REPORT PREVIEW (lightbox) ============ */}
+      {viewImage && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-[fadeIn_160ms_ease-out]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Uploaded report preview"
+          onClick={() => setViewImage(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setViewImage(null)}
+            aria-label="Close report preview"
+            className="absolute top-4 right-4 h-10 w-10 rounded-full bg-white/15 text-white hover:bg-white/25 flex items-center justify-center transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+          <img
+            src={viewImage}
+            alt="Uploaded medical report"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[88vh] max-w-full rounded-lg bg-white shadow-2xl object-contain"
+          />
+          <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-white/70">
+            Tap outside or press Esc to close
+          </p>
         </div>
       )}
     </div>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { LogoMark } from "@/components/site/logo";
 
 const STATS = [
@@ -195,12 +196,6 @@ export default function Home() {
               >
                 Analyze my report
               </Link>
-              <Link
-                href="/symptoms"
-                className="font-sans text-sm font-semibold text-foreground underline decoration-accent decoration-2 underline-offset-4 transition-colors hover:text-accent"
-              >
-                Check symptoms instead
-              </Link>
             </div>
             <p className="mt-3 text-xs text-muted">
               Free to try · No sign-up · Your image never leaves this device
@@ -222,6 +217,66 @@ export default function Home() {
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ============ EDITORIAL BREAK ============ */}
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-24">
+        <div className="grid items-center gap-10 lg:grid-cols-[1.06fr_0.94fr] lg:gap-16">
+          <div>
+            <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-border-c bg-soft">
+              <Image
+                src="/images/report-desk.jpg"
+                alt="A printed blood report, laptop and notebook on a wooden desk in morning light"
+                fill
+                sizes="(max-width: 1024px) 100vw, 610px"
+                className="object-cover"
+              />
+            </div>
+            <div className="mt-5 grid grid-cols-[132px_1fr] items-center gap-4">
+              <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border-c bg-soft">
+                <Image
+                  src="/images/blood-draw.jpg"
+                  alt="A blood sample being drawn into labelled collection tubes"
+                  fill
+                  sizes="132px"
+                  loading="lazy"
+                  className="object-cover"
+                />
+              </div>
+              <p className="text-[13px] leading-relaxed text-muted">
+                Drawn once. Read properly. The image never leaves your browser, so the report stays
+                where it belongs – with you.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <p className="font-sans text-[11px] font-bold tracking-[0.22em] uppercase text-accent">
+              The page in your hand
+            </p>
+            <h2 className="mt-3 font-sans text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
+              A dense sheet of numbers, read the way a clinician would
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-muted">
+              Every lab prints its own layout, its own units, its own reference ranges. BloodWorks
+              matches each value to the range printed beside it, then explains what the pattern
+              means in plain English – not a printed disclaimer.
+            </p>
+            <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-6 border-t border-border-c pt-7">
+              {[
+                ["Any lab, any layout", "Fuzzy matching across 60+ biomarkers and hundreds of label variants."],
+                ["Your ranges respected", "Lab-supplied bounds win over generic charts, every time."],
+                ["Nothing uploaded", "OCR and scoring run in the tab you already have open."],
+                ["Reopen any report", "History sits in this browser, ready when you need it."],
+              ].map(([t, d]) => (
+                <div key={t}>
+                  <dt className="font-sans text-sm font-bold text-foreground">{t}</dt>
+                  <dd className="mt-1.5 text-[13px] leading-relaxed text-muted">{d}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         </div>
       </section>

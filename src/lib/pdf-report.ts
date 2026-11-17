@@ -1,7 +1,7 @@
 import type { LabResult } from "@/lib/lab";
 import { reportStamp } from "./report-export";
 import jsPDF from "jspdf";
-import "jspdf-autotable";
+import { autoTable } from "jspdf-autotable";
 
 /* ---------------- Theme (matches the website) ---------------- */
 
@@ -22,6 +22,60 @@ type Status = "normal" | "watch" | "out";
 
 function labStatusToPdf(status: string): Status {
   return status === "normal" ? "normal" : status === "low" || status === "high" ? "out" : "watch";
+}
+
+/* ---------------- WinAnsi-safe text ---------------- */
+
+/**
+ * jsPDF's built-in Helvetica only encodes WinAnsi. Any character outside that
+ * map (for example the superscript ⁶ in "×10⁶/µL") makes jsPDF fall back to a
+ * raw UTF-16 stream, which renders as garbage in the PDF. Map superscripts and
+ * subscripts to ^n / _n and decompose anything else to a safe ASCII form.
+ */
+const SUPERSCRIPT: Record<string, string> = {
+  "\u2070": "^0", "\u00B9": "^1", "\u00B2": "^2", "\u00B3": "^3", "\u2074": "^4",
+  "\u2075": "^5", "\u2076": "^6", "\u2077": "^7", "\u2078": "^8", "\u2079": "^9",
+};
+const SUBSCRIPT: Record<string, string> = {
+  "\u2080": "_0", "\u2081": "_1", "\u2082": "_2", "\u2083": "_3", "\u2084": "_4",
+  "\u2085": "_5", "\u2086": "_6", "\u2087": "_7", "\u2088": "_8", "\u2089": "_9",
+};
+const WINANSI_EXTRA = new Set([
+  "\u20AC", "\u201A", "\u0192", "\u201E", "\u2026", "\u2020", "\u2021", "\u02C6", "\u2030",
+  "\u0160", "\u2039", "\u0152", "\u017D", "\u2018", "\u2019", "\u201C", "\u201D", "\u2022",
+  "\u2013", "\u2014", "\u02DC", "\u2122", "\u0161", "\u203A", "\u0153", "\u017E", "\u0178",
+]);
+
+function pdfText(input: string): string {
+  let out = "";
+  for (const ch of input) {
+    const sup = SUPERSCRIPT[ch];
+    if (sup) { out += sup; continue; }
+    const sub = SUBSCRIPT[ch];
+    if (sub) { out += sub; continue; }
+    const code = ch.codePointAt(0) ?? 0;
+    if ((code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff)) { out += ch; continue; }
+    if (WINANSI_EXTRA.has(ch)) { out += ch; continue; }
+    // Decompose accented / exotic characters (é → e), drop anything left over.
+    const plain = ch.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+    for (const c of plain) {
+      const cc = c.codePointAt(0) ?? 0;
+      if ((cc >= 0x20 && cc <= 0x7e) || (cc >= 0xa0 && cc <= 0xff)) out += c;
+    }
+  }
+  return out;
+}
+
+/** Route every string through pdfText() so no unmappable glyph reaches the PDF. */
+function sanitizeDocText(doc: jsPDF): void {
+  const originalText = doc.text.bind(doc);
+  (doc as unknown as { text: typeof doc.text }).text = ((text: string | string[], x: number, y: number, options?: unknown) => {
+    const safe = Array.isArray(text) ? text.map(pdfText) : pdfText(text);
+    return originalText(safe, x, y, options as never);
+  }) as typeof doc.text;
+  const originalSplit = doc.splitTextToSize.bind(doc);
+  (doc as unknown as { splitTextToSize: typeof doc.splitTextToSize }).splitTextToSize = ((text: string, size: number, options?: unknown) =>
+    originalSplit(pdfText(text), size, options as never)) as typeof doc.splitTextToSize;
 }
 
 /* ---------------- Ring chart (canvas → PNG data URL, jsPDF-safe) ---------------- */
@@ -167,7 +221,7 @@ function buildBiomarkersPage(doc: jsPDF, lab: LabResult, startY: number): number
     r.status === "normal" ? "In range" : r.status === "low" ? "Below range" : "Above range",
   ]);
 
-  (doc as any).autoTable({
+  autoTable(doc as any, {
     head: header,
     body: rows,
     startY,
@@ -197,6 +251,7 @@ function buildBiomarkersPage(doc: jsPDF, lab: LabResult, startY: number): number
 
 export function downloadPdfReport(lab: LabResult, ocrText?: string): void {
   const doc = new jsPDF({ unit: "px", format: "a4" });
+  sanitizeDocText(doc);
   const w = doc.internal.pageSize.getWidth();
 
   // ---------- Page 1 ----------

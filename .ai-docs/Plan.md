@@ -98,6 +98,19 @@ Stagewise plan for BloodWorks Health (symptom-app). Status legend: done / active
 - Dead code: unused `downloadText` import removed from `symptom-checker.tsx`.
 - Verified: `tsc --noEmit` clean, `pnpm build` 15/15 routes.
 
+## Stage 13: Parser truth, PDF encoding, report preview, mic, homepage imagery – done
+- **WBC read as 79.** The "DIFFERENTIAL LEUCOCYTE COUNT" header matched pass 1 and grabbed the next row's value (NEUTROPHILS 79). Pass 1 is now same-line only; cross-line tables still resolve through pass 2. Verified against the real OCR fixture: WBC 5.1, in range.
+- **Thousands separators.** `5,100` was truncated to `5`; the number regexes now accept comma groups and `plausibleValue()` strips them before parsing.
+- **Extra WBC aliases** (`total leukocyte count`, `leukocyte count`, `leukocyte`) so both spellings match.
+- **Duplicate supplement.** "Ciprofloxacin" and "Ciprofloxacin 500mg" both appeared; supplement keys are now normalised (dose digits and punctuation stripped) before dedupe.
+- **Garbled units in the PDF.** jsPDF's Helvetica is WinAnsi-only; the superscript ⁶ in `×10⁶/µL` forced a UTF-16 stream that rendered as `× 1 0 v /`. Every string now passes through `pdfText()` (`⁶ → ^6`, other superscripts/subscripts mapped, accents decomposed, unmappable glyphs dropped) via `sanitizeDocText()` on `doc.text` and `doc.splitTextToSize`.
+- **Uploaded report can be opened.** The upload thumbnail, a new "View report" link and every "Your reports" thumbnail open a full-screen lightbox (Esc, click-outside, body scroll lock).
+- **Sai mic was dead.** Results were read at the wrong level (`results[i].transcript` instead of `results[i][0].transcript`), `lang: "en"` was rejected by some engines, and every error was swallowed. Now: full BCP-47 tag, interim results preview typed live into the composer, `maxAlternatives`, explicit messages for blocked mic / no mic / no network / no speech, abort on unmount, always-visible mic icon.
+- **`/analyze` opened on the symptom tab.** Session hydration overwrote the route's tab; the route now wins (`/analyze` → report, `/symptoms` → symptom).
+- **Download could fail silently.** `exportReport` is wrapped in try/catch with a toast for both the "not ready" and "build failed" cases.
+- **Homepage photography.** Two Unsplash-licensed photos downloaded into `public/images/` (`report-desk.jpg`, `blood-draw.jpg`) and used in a new editorial section between the stats strip and the services grid, via `next/image` with `sizes`, lazy loading and descriptive alt text. The hero's secondary "Check symptoms instead" link was removed so the primary CTA stands alone.
+- Verified: `tsc --noEmit` clean, `pnpm build` 15/15 routes, PDF download produced a 3-page file, homepage renders both photos at 1440 px.
+
 ## Cleanup queue
 - No leftover `ocr-*.mjs`, `ocr-*.txt`, `verify-*.mjs` or `eng.traineddata` in the repo. Removed in Stage 10.
 - `scripts/make-icons.ps1` is the documented icon regeneration tool; keep it.

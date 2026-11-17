@@ -75,7 +75,7 @@ export type LabResult = {
 export const LAB_TESTS: LabTest[] = [
   // CBC
   { key: "hb", label: "Hemoglobin", aliases: ["hemoglobin", "hb", "hgb"], low: 13.0, high: 17.0, unit: "g/dL", system: "nutritional" },
-  { key: "wbc", label: "WBC (Leukocytes)", aliases: ["total leucocyte count", "leucocyte count", "white blood cells", "wbc", "leucocytes", "leukocytes"], low: 4.0, high: 11.0, unit: "×10³/µL", system: "inflammation" },
+  { key: "wbc", label: "WBC (Leukocytes)", aliases: ["total leucocyte count", "total leukocyte count", "leucocyte count", "leukocyte count", "white blood cells", "wbc", "leucocytes", "leukocytes", "leukocyte"], low: 4.0, high: 11.0, unit: "×10³/µL", system: "inflammation" },
   { key: "rbc", label: "RBC", aliases: ["red blood cells", "rbc"], low: 4.5, high: 5.9, unit: "×10⁶/µL", system: "nutritional" },
   { key: "plt", label: "Platelets", aliases: ["platelets", "plt"], low: 150, high: 450, unit: "×10³/µL", system: "cardiovascular" },
   { key: "hct", label: "Hematocrit", aliases: ["hematocrit", "hct", "packed cell volume", "pcv"], low: 40, high: 52, unit: "%", system: "nutritional" },
@@ -153,10 +153,12 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /* Value sanity: reject phone numbers, MRNs, DOBs; auto-scale absolute counts */
 function plausibleValue(raw: string, test: LabTest): number | null {
-  const v = parseFloat(raw);
+  // Strip thousands separators ("5,100" → 5100) before parsing.
+  const cleaned = raw.replace(/,/g, "");
+  const v = parseFloat(cleaned);
   if (!Number.isFinite(v) || v <= 0) return null;
-  const intPart = raw.split(".")[0];
-  if (intPart.length > 5) return null;
+  const intPart = cleaned.split(".")[0];
+  if (intPart.length > 6) return null;
   // Labs that report WBC/platelets as absolute counts (e.g. 13500)
   if (v > test.high * 100 && v / 1000 <= test.high) return v / 1000;
   return v;
@@ -221,8 +223,12 @@ function extractValueForTest(
   // Pass 1: alias (+ up to two trailing label words) immediately followed by a
   // number. The number must sit close to the alias and must not be a range bound.
   for (const alias of test.aliases) {
+    // Same-line matching only: the gap between the alias and the number may
+    // not cross a newline, otherwise a header such as "LEUCOCYTE COUNT" grabs
+    // the value from the next row (NEUTROPHILS 79). Cross-line tables are
+    // handled by pass 2 below.
     const re = new RegExp(
-      `\\b${esc(alias)}[\\s:#\\-.]*(?:[a-z]{2,12}[\\s:#\\-.]+){0,2}([0-9]+(?:\\.[0-9]+)?)(?![0-9.])`
+      `\\b${esc(alias)}[ \\t:#\\-.]*(?:[a-z]{2,12}[ \\t:#\\-.]+){0,2}([0-9][0-9,]*(?:\\.[0-9]+)?)(?![0-9.])`
     );
     const m = lower.match(re);
     if (m) {
@@ -248,7 +254,7 @@ function extractValueForTest(
     if (!hit) continue;
     const end = Math.min(lower.length, hit.i + hit.w.length + 40);
     const tail = lower.slice(hit.i + hit.w.length, end);
-    const num = tail.match(/([0-9]+(?:\.[0-9]+)?)(?![0-9.])/);
+    const num = tail.match(/([0-9][0-9,]*(?:\.[0-9]+)?)(?![0-9.])/);
     if (num) {
       const numStart = hit.i + hit.w.length + num.index!;
       const numEnd = numStart + num[1].length;
@@ -1577,11 +1583,15 @@ export function parseLabReport(text: string): LabResult | null {
 
   /* Supplement plan – deduped from prescriptions */
   const supMap = new Map<string, Supplement>();
+  // Normalise the medication name (strip doses, units, punctuation) so
+  // "Ciprofloxacin" and "Ciprofloxacin 500mg" collapse into one entry.
+  const supKey = (s: string) => s.replace(/\d.*$/, "").replace(/[^a-z]/gi, "").toLowerCase();
   const supplementFrom = (f: LabFinding) => {
     const p = f.prescription;
     const primary = p.medication.split("+")[0].trim();
-    if (supMap.has(primary)) return;
-    supMap.set(primary, {
+    const key = supKey(primary);
+    if (!key || supMap.has(key)) return;
+    supMap.set(key, {
       name: primary,
       dose: p.dosage.split("+")[0].trim(),
       timing: p.frequency.split(";")[0].trim(),

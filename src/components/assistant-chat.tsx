@@ -72,15 +72,18 @@ const ICON = {
 
 /* ---------------- Speech recognition (optional, feature-detected) ---------------- */
 
+type RecResult = { isFinal: boolean; length: number; [index: number]: { transcript: string } };
 type Rec = {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
-  onresult: (e: { resultIndex: number; results: ArrayLike<{ transcript: string }> }) => void;
+  maxAlternatives: number;
+  onresult: (e: { resultIndex: number; results: ArrayLike<RecResult> }) => void;
   onend: () => void;
   onerror: (e: { error?: string }) => void;
   start: () => void;
   stop: () => void;
+  abort: () => void;
 };
 
 function getRecognition(): Rec | null {
@@ -92,9 +95,12 @@ function getRecognition(): Rec | null {
   const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!Ctor) return null;
   const rec = new Ctor();
-  rec.lang = "en";
-  rec.interimResults = false;
+  // A full BCP-47 tag is required; bare "en" is rejected by some engines.
+  const nav = typeof navigator !== "undefined" ? navigator.language : "";
+  rec.lang = nav && /^en(-|$)/i.test(nav) ? nav : "en-US";
+  rec.interimResults = true;
   rec.continuous = false;
+  rec.maxAlternatives = 1;
   return rec;
 }
 
@@ -121,6 +127,7 @@ export default function AssistantChat({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<Rec | null>(null);
+  const micBaseRef = useRef("");
   const ctxRef = useRef(context);
   ctxRef.current = context;
 
@@ -128,6 +135,9 @@ export default function AssistantChat({
   // (avoids a hydration mismatch for the mic button).
   useEffect(() => {
     setMicSupported(!!getRecognition());
+    return () => {
+      try { recRef.current?.abort(); } catch { /* noop */ }
+    };
   }, []);
 
   useEffect(() => {
@@ -189,26 +199,61 @@ export default function AssistantChat({
 
   const toggleMic = () => {
     if (listening) {
-      recRef.current?.stop();
+      try { recRef.current?.stop(); } catch { /* already stopped */ }
       setListening(false);
       return;
     }
     const rec = getRecognition();
-    if (!rec) return;
+    if (!rec) {
+      setToast("Voice input is not supported in this browser");
+      return;
+    }
+    setError(null);
+    micBaseRef.current = input.trim();
     rec.onresult = (e) => {
-      let transcript = "";
+      let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        transcript += e.results[i].transcript;
+        const result = e.results[i];
+        const text = result[0]?.transcript ?? "";
+        if (result.isFinal) {
+          const clean = text.replace(/\s+/g, " ").trim();
+          if (clean) micBaseRef.current = micBaseRef.current ? `${micBaseRef.current} ${clean}` : clean;
+        } else {
+          interim += text;
+        }
       }
-      if (transcript.trim()) {
-        setInput((prev) => (prev ? prev + " " : "") + transcript.replace(/\s+/g, " ").trim());
+      const preview = [micBaseRef.current, interim.replace(/\s+/g, " ").trim()]
+        .filter(Boolean)
+        .join(" ");
+      setInput(preview);
+    };
+    rec.onend = () => {
+      setListening(false);
+      // Keep focus in the input so the user can review and send immediately.
+      inputRef.current?.focus();
+    };
+    rec.onerror = (e) => {
+      setListening(false);
+      const code = e.error ?? "";
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        setError("Microphone access is blocked. Allow the microphone in your browser, then try again.");
+      } else if (code === "audio-capture") {
+        setError("No microphone was found on this device.");
+      } else if (code === "network") {
+        setError("Speech recognition needs a network connection.");
+      } else if (code === "no-speech") {
+        setToast("No speech detected – try again");
+      } else if (code !== "aborted") {
+        setError("Voice input stopped unexpectedly. Please try again.");
       }
     };
-    rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
     recRef.current = rec;
-    rec.start();
-    setListening(true);
+    try {
+      rec.start();
+      setListening(true);
+    } catch {
+      setError("Could not start the microphone. Check your browser settings.");
+    }
   };
 
   const transcript = () => buildSaiTranscript(messages, labSummary);
@@ -388,15 +433,16 @@ export default function AssistantChat({
           {micSupported && (
             <button
               onClick={toggleMic}
-              title={listening ? "Stop listening" : "Dictate"}
-              aria-label={listening ? "Stop listening" : "Dictate"}
+              title={listening ? "Stop listening" : "Dictate your question"}
+              aria-label={listening ? "Stop listening" : "Dictate your question"}
+              aria-pressed={listening}
               className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
                 listening
                   ? "bg-red-500 text-white animate-pulse"
                   : "text-muted hover:text-accent-deep hover:bg-soft"
               }`}
             >
-              {listening ? ICON.mic : ICON.micOff}
+              {ICON.mic}
             </button>
           )}
           <button
@@ -408,7 +454,7 @@ export default function AssistantChat({
           </button>
         </div>
         <p className="text-[10px] text-muted mt-1.5 px-1">
-          Enter to send · Shift + Enter for a new line
+          {listening ? "Listening… speak now, your words appear above" : "Enter to send · Shift + Enter for a new line"}
         </p>
       </div>
     </section>

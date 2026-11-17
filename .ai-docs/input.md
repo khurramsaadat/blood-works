@@ -48,6 +48,12 @@ Chronological record of every owner input and prompt that shaped this project. N
 - Scroll spy: as the report scrolls, the left panel highlights the section in view. Keep two active rows: the tool mode (Analyze a Report) and the current report section. Hide sidebar links whose section is not rendered.
 - Download report should match the website: colorful multi-page PDF with charts/graphs (per-system score rings, biomarker table), definitive diagnosis, prescription, care actions L1–L3, supplement plan, optional raw OCR text.
 - Full app bug review: review the entire app for bugs, broken interactions and inconsistent behavior across all pages. Fix anything that is not working as expected and list what was found and fixed. Then push all code to the GitHub repo (permission granted for this push only).
+- When I click on the report that I have uploaded, let me see it.
+- Mic does not work in Sai AI assistant, please make sure it works and show text after mic recording.
+- Please use free images from the internet relevant to this site and use them in the home page to make it look less AI vibe coded.
+- On `/analyze`, the default tab must be "Analyze a Report".
+- Remove the "Check symptoms instead" button from the hero section.
+- Download report button does not work (screenshot of the upload card with Download report and Share controls).
 
 
 ## Standing rules (from AGENTS.md)
