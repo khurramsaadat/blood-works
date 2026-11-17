@@ -18,7 +18,8 @@ export type SavedSession = {
   createdAt: string; // ISO, first save of this session
   updatedAt: string; // ISO, last save
   kind: "lab" | "symptom";
-  image: string; // dataURL of the uploaded report (" " for symptom sessions)
+  image: string; // dataURL of the first uploaded report (" " for symptom sessions) — kept for backward compat
+  images: string[]; // dataURLs of all uploaded report pages
   ocrText: string; // editable extracted text (" " for symptom sessions)
   symptomInput: string; // symptom-checker text (" " for lab sessions)
   lab: LabResult | null;
@@ -54,6 +55,11 @@ function sanitize(raw: unknown): SavedSession | null {
     updatedAt: typeof s.updatedAt === "string" ? s.updatedAt : s.createdAt,
     kind: s.kind === "symptom" ? "symptom" : "lab",
     image: typeof s.image === "string" ? s.image : "",
+    images: Array.isArray(s.images)
+      ? (s.images as unknown[]).filter((x): x is string => typeof x === "string")
+      : typeof s.image === "string" && s.image
+        ? [s.image]
+        : [],
     ocrText: typeof s.ocrText === "string" ? s.ocrText : "",
     symptomInput: typeof s.symptomInput === "string" ? s.symptomInput : "",
     lab: looksLikeLab(s.lab) ? s.lab : null,
@@ -85,7 +91,7 @@ export function persistSessions(list: SavedSession[]): void {
     // Quota exceeded (very large dataURLs): drop the oldest images, keep
     // the text + chat, and retry once.
     try {
-      const slimmed = list.map((s) => ({ ...s, image: "" }));
+      const slimmed = list.map((s) => ({ ...s, image: "", images: [] }));
       window.localStorage.setItem(KEY, JSON.stringify(slimmed));
     } catch {
       /* give up quietly – storage is a convenience, not the source of truth */

@@ -359,10 +359,10 @@ const NAV_REPORT: NavEntry[] = [
 
 type OcrState =
   | { status: "idle" }
-  | { status: "loading"; image: string }
-  | { status: "progress"; pct: number; image: string }
-  | { status: "done"; text: string; image: string }
-  | { status: "error"; message: string };
+  | { status: "loading"; images: string[]; pct: number }
+  | { status: "progress"; pct: number; images: string[]; page: number; totalPages: number }
+  | { status: "done"; text: string; images: string[] }
+  | { status: "error"; message: string; images: string[] };
 
 export default function SymptomChecker() {
   const [input, setInput] = useState("");
@@ -420,7 +420,7 @@ export default function SymptomChecker() {
     const sampleId = new URLSearchParams(window.location.search).get("sample");
     if (isSampleId(sampleId)) {
       const sample = SAMPLES[sampleId];
-      setOcr({ status: "done", text: sample.ocrText, image: "" });
+      setOcr({ status: "done", text: sample.ocrText, images: [] });
       setAnalysis(analyzeAll(sample.ocrText));
       setActiveId(`sample-${sample.id}`);
       setIsSample(true);
@@ -450,7 +450,7 @@ export default function SymptomChecker() {
 
   const applySession = (s: SavedSession) => {
     if (s.kind === "lab") {
-      setOcr({ status: "done", text: s.ocrText, image: s.image });
+      setOcr({ status: "done", text: s.ocrText, images: s.images && s.images.length ? s.images : (s.image ? [s.image] : []) });
       setAnalysis(analyzeAll(s.ocrText));
     } else {
       setOcr({ status: "idle" });
@@ -471,7 +471,8 @@ export default function SymptomChecker() {
       createdAt: now,
       updatedAt: now,
       kind,
-      image: kind === "lab" && ocr.status === "done" ? ocr.image : "",
+      image: kind === "lab" && ocr.status === "done" ? (ocr.images[0] ?? "") : "",
+      images: kind === "lab" && ocr.status === "done" ? ocr.images : [],
       ocrText: kind === "lab" && ocr.status === "done" ? ocr.text : "",
       symptomInput: kind === "symptom" ? input : "",
       lab: analysis?.lab ?? null,
@@ -520,20 +521,22 @@ export default function SymptomChecker() {
     setToast("All sessions cleared");
   };
 
-  const newOcr = (file: File) => {
+  const newOcr = (files: File[]) => {
+    const valid = files.filter((f) => f.type.startsWith("image/"));
+    if (valid.length === 0) return;
     const run = ++ocrRun.current;
-    fileToDataUrl(file)
-      .then((image) => {
+    Promise.all(valid.map(fileToDataUrl))
+      .then((images) => {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         setActiveId(id);
         setIsSample(false);
-        setOcr({ status: "loading", image });
+        setOcr({ status: "loading", images, pct: 0 });
         setChat([]);
         setTab("report");
-        return runOcr(file, image, run);
+        return runOcr(valid, images, run, false);
       })
       .catch(() => {
-        if (ocrRun.current === run) setOcr({ status: "error", message: "Could not read this image." });
+        if (ocrRun.current === run) setOcr({ status: "error", message: "Could not read this image.", images: [] });
       });
   };
 
@@ -559,7 +562,7 @@ export default function SymptomChecker() {
         const file = item.getAsFile();
         if (!file) continue;
         e.preventDefault();
-        pasteOcr.current(file);
+        pasteOcr.current([file]);
         setToast("Reading pasted screenshot…");
         return;
       }
@@ -593,56 +596,90 @@ export default function SymptomChecker() {
     }
   };
 
-  const runOcr = useCallback(async (file: File, image: string, run: number) => {
-    setOcr({ status: "loading", image });
+  const runOcr = useCallback(async (files: File[], images: string[], run: number, append: boolean) => {
+    const existingText = append && ocr.status === "done" ? ocr.text : "";
+    const existingImages = append && ocr.status === "done" ? ocr.images : [];
+    const allImages = append ? [...existingImages, ...images] : images;
+    let combinedText = existingText;
     try {
-      // Preprocess: upscale small photos, grayscale + boost contrast so OCR
-      // can read low-resolution report photos.
-      let ocrInput: File | HTMLCanvasElement = file;
-      const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error("Could not decode the image."));
-        img.src = image;
-      });
-      const canvas = document.createElement("canvas");
-      const scale = Math.min(2, Math.max(1, 1600 / Math.max(loaded.naturalWidth, loaded.naturalHeight)));
-      canvas.width = Math.round(loaded.naturalWidth * scale);
-      canvas.height = Math.round(loaded.naturalHeight * scale);
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(loaded, 0, 0, canvas.width, canvas.height);
-        ctx.filter = "grayscale(1) contrast(1.35) brightness(1.05)";
-        ctx.drawImage(canvas, 0, 0);
-        ctx.filter = "none";
-        ocrInput = canvas;
+      for (let i = 0; i < files.length; i++) {
+        if (ocrRun.current !== run) return;
+        const file = files[i];
+        const image = images[i];
+        setOcr({ status: "progress", pct: Math.round((i / files.length) * 100), images: allImages, page: i + 1, totalPages: files.length });
+        // Preprocess: upscale small photos, grayscale + boost contrast so OCR
+        // can read low-resolution report photos.
+        let ocrInput: File | HTMLCanvasElement = file;
+        const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error("Could not decode the image."));
+          img.src = image;
+        });
+        const canvas = document.createElement("canvas");
+        const scale = Math.min(2, Math.max(1, 1600 / Math.max(loaded.naturalWidth, loaded.naturalHeight)));
+        canvas.width = Math.round(loaded.naturalWidth * scale);
+        canvas.height = Math.round(loaded.naturalHeight * scale);
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(loaded, 0, 0, canvas.width, canvas.height);
+          ctx.filter = "grayscale(1) contrast(1.35) brightness(1.05)";
+          ctx.drawImage(canvas, 0, 0);
+          ctx.filter = "none";
+          ocrInput = canvas;
+        }
+        const { data } = await Tesseract.recognize(ocrInput, "eng", {
+          logger: (m) => {
+            if (m.status === "recognizing text" && ocrRun.current === run) {
+              setOcr({ status: "progress", pct: Math.round((i / files.length) * 100 + m.progress * (100 / files.length)), images: allImages, page: i + 1, totalPages: files.length });
+            }
+          },
+        });
+        if (ocrRun.current !== run) return;
+        const pageText = data.text.trim();
+        const label = existingImages.length + i + 1;
+        combinedText = combinedText ? combinedText + "\n\n--- Page " + label + " ---\n" + pageText : pageText;
       }
-      const { data } = await Tesseract.recognize(ocrInput, "eng", {
-        logger: (m) => {
-          if (m.status === "recognizing text" && ocrRun.current === run) {
-            setOcr({ status: "progress", pct: Math.round(m.progress * 100), image });
-          }
-        },
-      });
-      if (ocrRun.current !== run) return; // a newer upload superseded this run
-      setOcr({ status: "done", text: data.text.trim(), image });
-      setAnalysis(analyzeAll(data.text));
+      if (ocrRun.current !== run) return;
+      setOcr({ status: "done", text: combinedText, images: allImages });
+      setAnalysis(analyzeAll(combinedText));
     } catch (e) {
       if (ocrRun.current !== run) return;
-      setOcr({ status: "error", message: e instanceof Error ? e.message : "Could not read this image." });
+      setOcr({ status: "error", message: e instanceof Error ? e.message : "Could not read this image.", images: allImages });
     }
   }, []);
 
   const onFile = (file: File | undefined | null) => {
-    if (file && file.type.startsWith("image/")) newOcr(file);
+    if (file && file.type.startsWith("image/")) newOcr([file]);
+  };
+
+  const addingPagesRef = useRef(false);
+  const addPages = (files: File[]) => {
+    const valid = files.filter((f) => f.type.startsWith("image/"));
+    if (valid.length === 0) return;
+    const run = ++ocrRun.current;
+    const existingText = ocr.status === "done" ? ocr.text : "";
+    const existingImages = ocr.status === "done" ? ocr.images : [];
+    Promise.all(valid.map(fileToDataUrl))
+      .then((images) => {
+        const allImages = [...existingImages, ...images];
+        setIsSample(false);
+        setOcr({ status: "loading", images: allImages, pct: 0 });
+        setTab("report");
+        return runOcr(valid, images, run, true);
+      })
+      .catch(() => {
+        if (ocrRun.current === run) setOcr({ status: "error", message: "Could not read this image.", images: existingImages });
+      });
   };
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    onFile(e.dataTransfer.files?.[0]);
+    const files = Array.from(e.dataTransfer.files ?? []).filter((f) => f.type.startsWith("image/"));
+    if (files.length) newOcr(files);
   };
 
   const lab = analysis?.lab ?? null;
@@ -953,9 +990,18 @@ export default function SymptomChecker() {
                   ref={fileInput}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hidden"
                   onChange={(e) => {
-                    onFile(e.target.files?.[0]);
+                    const files = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith("image/"));
+                    if (files.length) {
+                      if (addingPagesRef.current) {
+                        addingPagesRef.current = false;
+                        addPages(files);
+                      } else {
+                        newOcr(files);
+                      }
+                    }
                     e.target.value = "";
                   }}
                 />
@@ -963,25 +1009,41 @@ export default function SymptomChecker() {
                 {ocr.status === "done" ? (
                   <div className="space-y-4">
                     <div className="flex items-start gap-4">
-                      {ocr.image ? (
-                        <button
-                          type="button"
-                          onClick={() => setViewImage(ocr.image)}
-                          title="View the report you uploaded"
-                          aria-label="View the uploaded report"
-                          className="group relative h-24 w-24 shrink-0 rounded-lg overflow-hidden border border-border-c focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                          <img
-                            src={ocr.image}
-                            alt="Uploaded medical report"
-                            className="h-full w-full object-cover"
-                          />
-                          <span className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center">
-                            <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-semibold tracking-wide uppercase">
-                              View
-                            </span>
-                          </span>
-                        </button>
+                      {ocr.images && ocr.images.length > 0 ? (
+                        <div className="flex flex-col gap-2 shrink-0">
+                          <div className="flex flex-wrap gap-2">
+                            {ocr.images.map((img, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => setViewImage(img)}
+                                title={`View page ${i + 1}`}
+                                aria-label={`View uploaded report page ${i + 1}`}
+                                className="group relative h-20 w-20 shrink-0 rounded-lg overflow-hidden border border-border-c focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                              >
+                                <img src={img} alt={`Uploaded medical report page ${i + 1}`} className="h-full w-full object-cover" />
+                                <span className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center">
+                                  <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-[9px] font-semibold tracking-wide uppercase">
+                                    View
+                                  </span>
+                                </span>
+                                <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-1 text-[8px] font-bold text-white">
+                                  {i + 1}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              addingPagesRef.current = true;
+                              fileInput.current?.click();
+                            }}
+                            className="inline-flex items-center gap-1 text-[10px] font-medium text-accent-deep border border-accent/30 hover:bg-soft rounded-lg px-2 py-1 transition-colors"
+                          >
+                            + Add page
+                          </button>
+                        </div>
                       ) : (
                         <div className="h-24 w-24 shrink-0 rounded-lg border border-dashed border-border-c bg-soft flex flex-col items-center justify-center px-2 text-center">
                           <span className="text-[10px] font-bold uppercase tracking-widest text-accent-deep">
@@ -997,10 +1059,10 @@ export default function SymptomChecker() {
                           <p className="text-xs text-muted uppercase tracking-wide mb-1">
                             Extracted text – fix any misreads, analysis updates live
                           </p>
-                          {ocr.image && (
+                          {ocr.images && ocr.images.length > 0 && (
                             <button
                               type="button"
-                              onClick={() => setViewImage(ocr.image)}
+                              onClick={() => setViewImage(ocr.images[0])}
                               className="shrink-0 text-[11px] font-medium text-accent-deep hover:underline"
                             >
                               View report
@@ -1105,10 +1167,10 @@ export default function SymptomChecker() {
                       : `${outOfRange} value${outOfRange > 1 ? "s" : ""} out of range`}
                   </p>
                 </div>
-                {ocr.status === "done" && ocr.image && (
+                {ocr.status === "done" && ocr.images && ocr.images.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setViewImage(ocr.image ?? null)}
+                    onClick={() => setViewImage(ocr.images[0] ?? null)}
                     className="hidden shrink-0 rounded-lg border border-border-c px-2.5 py-1.5 text-[11px] font-medium text-muted transition-colors hover:border-accent hover:text-accent-deep sm:inline-flex"
                   >
                     View report
