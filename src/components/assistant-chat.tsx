@@ -109,20 +109,6 @@ const ICON = {
   ),
 };
 
-function loadPuter(): Promise<any> {
-  if (typeof window === 'undefined') return Promise.reject(new Error('no window'));
-  const w = window as unknown as { puter?: any };
-  if (w.puter) return Promise.resolve(w.puter);
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://js.puter.com/v2/';
-    s.async = true;
-    s.onload = () => (w.puter ? resolve(w.puter) : reject(new Error('Puter failed to load')));
-    s.onerror = () => reject(new Error('Could not load Puter.js'));
-    document.head.appendChild(s);
-  });
-}
-
 /* ---------------- Speech recognition (optional, feature-detected) ---------------- */
 
 type RecResult = { isFinal: boolean; length: number; [index: number]: { transcript: string } };
@@ -518,21 +504,23 @@ export default function AssistantChat({
     setSpeakingIdx(idx);
     setTtsLoading(true);
     try {
-      const puter = await loadPuter();
-      const audio = (await puter.ai.txt2speech(clean, {
-        provider: 'openai',
-        model: 'gpt-4o-mini-tts',
-        voice: 'nova',
-        response_format: 'mp3',
-        instructions: 'Speak naturally, warmly, like a real person, with gentle pacing and clear enunciation. Use a calm, friendly American female voice.',
-      })) as HTMLAudioElement;
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: clean }),
+      });
+      if (!res.ok) throw new Error('TTS request failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
       audioRef.current = audio;
-      audio.onended = () => { setSpeakingIdx(null); setTtsLoading(false); audioRef.current = null; };
-      audio.onerror = () => { setSpeakingIdx(null); setTtsLoading(false); audioRef.current = null; };
+      audio.onended = () => { setSpeakingIdx(null); setTtsLoading(false); audioRef.current = null; URL.revokeObjectURL(url); };
+      audio.onerror = () => { setSpeakingIdx(null); setTtsLoading(false); audioRef.current = null; URL.revokeObjectURL(url); };
       setTtsLoading(false);
       await audio.play();
     } catch (e) {
       setTtsLoading(false);
+      // Fallback to browser Web Speech (best available American female voice).
       if (!('speechSynthesis' in window)) { setSpeakingIdx(null); return; }
       const femaleNames = ['Samantha', 'Zira', 'Jenny', 'Aria', 'Karen', 'Victoria', 'Allison', 'Ava', 'Emily', 'Sarah', 'Hazel', 'Libby', 'Molly', 'Nancy', 'Susan', 'Linda', 'Olivia', 'Amber', 'Ashley', 'Michelle'];
       const voices = window.speechSynthesis.getVoices();
