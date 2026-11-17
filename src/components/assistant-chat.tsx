@@ -666,7 +666,7 @@ export default function AssistantChat({
               )}
             </div>
             {m.role === "assistant" && (
-              <div className="mt-1 flex flex-wrap items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+              <div className="mt-1 flex flex-wrap items-center gap-0.5 transition-opacity">
                 <span className="text-[10px] text-muted mr-1">Reply:</span>
                 <ActionIcon label="Copy reply" onClick={() => exportReply(m, "copy")}>{ICON.copy}</ActionIcon>
                 <ActionIcon label="Download reply" onClick={() => exportReply(m, "download")}>{ICON.download}</ActionIcon>
