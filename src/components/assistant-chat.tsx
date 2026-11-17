@@ -676,16 +676,6 @@ export default function AssistantChat({
                 <ActionIcon label="Copy reply" onClick={() => exportReply(m, "copy")}>{ICON.copy}</ActionIcon>
                 <ActionIcon label="Download reply" onClick={() => exportReply(m, "download")}>{ICON.download}</ActionIcon>
                 <ActionIcon label="Share reply" onClick={() => exportReply(m, "share")}>{ICON.share}</ActionIcon>
-                <ActionIcon label="Read aloud" onClick={() => speak(i, m.content)}>
-                  {speakingIdx === i ? (
-                    <span className="relative flex h-3 w-3">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
-                      <span className="relative inline-flex h-3 w-3 rounded-full bg-accent" />
-                    </span>
-                  ) : (
-                    ICON.speaker
-                  )}
-                </ActionIcon>
                 {labRows && labRows.length > 0 && (
                   <>
                     {labRows
