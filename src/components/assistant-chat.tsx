@@ -109,6 +109,20 @@ const ICON = {
   ),
 };
 
+function loadPuter(): Promise<any> {
+  if (typeof window === 'undefined') return Promise.reject(new Error('no window'));
+  const w = window as unknown as { puter?: any };
+  if (w.puter) return Promise.resolve(w.puter);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://js.puter.com/v2/';
+    s.async = true;
+    s.onload = () => (w.puter ? resolve(w.puter) : reject(new Error('Puter failed to load')));
+    s.onerror = () => reject(new Error('Could not load Puter.js'));
+    document.head.appendChild(s);
+  });
+}
+
 /* ---------------- Speech recognition (optional, feature-detected) ---------------- */
 
 type RecResult = { isFinal: boolean; length: number; [index: number]: { transcript: string } };
@@ -169,6 +183,8 @@ export default function AssistantChat({
   const [confirmClear, setConfirmClear] = useState(false);
   const [followUps, setFollowUps] = useState<string[]>([]);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
+  const [ttsLoading, setTtsLoading] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [ttsMuted, setTtsMuted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -486,52 +502,50 @@ export default function AssistantChat({
     }
   };
 
-  const speak = (idx: number, text: string) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  const speak = async (idx: number, text: string) => {
+    if (typeof window === 'undefined') return;
     if (ttsMuted) return;
     if (speakingIdx === idx) {
-      window.speechSynthesis.cancel();
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      window.speechSynthesis?.cancel();
       setSpeakingIdx(null);
+      setTtsLoading(false);
       return;
     }
-    const doSpeak = () => {
+    window.speechSynthesis?.cancel();
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    const clean = text.replace(/[#*_`]/g, '');
+    setSpeakingIdx(idx);
+    setTtsLoading(true);
+    try {
+      const puter = await loadPuter();
+      const audio = (await puter.ai.txt2speech(clean, {
+        provider: 'openai',
+        model: 'gpt-4o-mini-tts',
+        voice: 'nova',
+        response_format: 'mp3',
+        instructions: 'Speak naturally, warmly, like a real person, with gentle pacing and clear enunciation. Use a calm, friendly American female voice.',
+      })) as HTMLAudioElement;
+      audioRef.current = audio;
+      audio.onended = () => { setSpeakingIdx(null); setTtsLoading(false); audioRef.current = null; };
+      audio.onerror = () => { setSpeakingIdx(null); setTtsLoading(false); audioRef.current = null; };
+      setTtsLoading(false);
+      await audio.play();
+    } catch (e) {
+      setTtsLoading(false);
+      if (!('speechSynthesis' in window)) { setSpeakingIdx(null); return; }
+      const femaleNames = ['Samantha', 'Zira', 'Jenny', 'Aria', 'Karen', 'Victoria', 'Allison', 'Ava', 'Emily', 'Sarah', 'Hazel', 'Libby', 'Molly', 'Nancy', 'Susan', 'Linda', 'Olivia', 'Amber', 'Ashley', 'Michelle'];
       const voices = window.speechSynthesis.getVoices();
-      const femaleNames = ["Samantha", "Zira", "Jenny", "Aria", "Karen", "Victoria", "Allison", "Ava", "Emily", "Sarah", "Hazel", "Libby", "Molly", "Nancy", "Susan", "Linda", "Olivia", "Amber", "Ashley", "Michelle"];
-      const pick =
-        voices.find((v) => v.lang === "en-US" && femaleNames.some((n) => v.name.includes(n))) ||
-        voices.find((v) => v.lang === "en-US" && /female|woman/i.test(v.name)) ||
-        voices.find((v) => v.lang === "en-US") ||
-        voices.find((v) => /^en/i.test(v.lang)) ||
-        null;
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(text.replace(/[#*_`]/g, ""));
+      const pick = voices.find((v) => v.lang === 'en-US' && femaleNames.some((n) => v.name.includes(n))) || voices.find((v) => v.lang === 'en-US' && /female|woman/i.test(v.name)) || voices.find((v) => v.lang === 'en-US') || voices.find((v) => /^en/i.test(v.lang)) || null;
+      const utter = new SpeechSynthesisUtterance(clean);
       if (pick) utter.voice = pick;
-      utter.lang = "en-US";
+      utter.lang = 'en-US';
       utter.rate = 0.95;
       utter.pitch = 1.0;
       utter.volume = 1.0;
       utter.onend = () => setSpeakingIdx(null);
       utter.onerror = () => setSpeakingIdx(null);
-      setSpeakingIdx(idx);
       window.speechSynthesis.speak(utter);
-    };
-    if (window.speechSynthesis.getVoices().length === 0) {
-      const handler = () => {
-        window.speechSynthesis.removeEventListener("voiceschanged", handler);
-        doSpeak();
-      };
-      window.speechSynthesis.addEventListener("voiceschanged", handler);
-      // Fallback in case the event never fires.
-      window.setTimeout(() => {
-        try {
-          window.speechSynthesis.removeEventListener("voiceschanged", handler);
-        } catch {
-          /* noop */
-        }
-        doSpeak();
-      }, 1200);
-    } else {
-      doSpeak();
     }
   };
 
