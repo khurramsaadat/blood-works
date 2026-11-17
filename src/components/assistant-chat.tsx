@@ -541,6 +541,24 @@ export default function AssistantChat({
     }
   };
 
+  const previewVoice = async (voice: string) => {
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Hello, this is how I sound. I can read your report results aloud.", voice }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch {
+      /* ignore */
+    }
+  };
+
   const transcript = () => buildSaiTranscript(messages, labSummary);
 
   const exportConversation = async (mode: "download" | "share") => {
@@ -845,6 +863,8 @@ export default function AssistantChat({
             onChange={(e) => {
               setTtsVoice(e.target.value);
               try { localStorage.setItem("bw.tts.voice", e.target.value); } catch { /* storage blocked */ }
+              // Preview the newly selected voice.
+              void previewVoice(e.target.value);
             }}
             className="text-[10px] rounded-md border border-border-c bg-background px-2 py-1 text-muted focus:outline-none focus:border-accent"
           >
@@ -856,6 +876,15 @@ export default function AssistantChat({
             <option value="en-US-AvaNeural">Ava (American female)</option>
             <option value="en-US-MichelleNeural">Michelle (American female)</option>
           </select>
+          <button
+            type="button"
+            onClick={() => void previewVoice(ttsVoice)}
+            title="Preview the selected voice"
+            aria-label="Preview the selected voice"
+            className="text-[10px] rounded-md border border-border-c bg-background px-2 py-1 text-muted hover:text-accent-deep hover:border-accent transition-colors"
+          >
+            ▶ Preview
+          </button>
           <a
             href="https://speech.microsoft.com/portal/voicegallery"
             target="_blank"
