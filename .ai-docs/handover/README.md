@@ -6,7 +6,7 @@ Everything a new developer needs to run, understand, test, and extend BloodWorks
 |---|---|
 | [01-architecture.md](./01-architecture.md) | Stack, file map, routes, data flow, key design decisions |
 | [02-ocr-pipeline.md](./02-ocr-pipeline.md) | Image preprocessing, tesseract.js, fuzzy matching, plausibility filter, range guards |
-| [03-ai-assistant.md](./03-ai-assistant.md) | IFM API route, Sai persona, multi-turn reasoning_content rule, input and exports |
+| [03-ai-assistant.md](./03-ai-assistant.md) | IFM API route, Sai persona, multi-turn reasoning_content rule, input and exports, TTS, mic fallback, streaming |
 | [04-known-issues.md](./04-known-issues.md) | Open accuracy items, gotchas, cleanup tasks, environment specifics |
 
 ## Run it in 60 seconds
