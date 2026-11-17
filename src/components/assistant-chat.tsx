@@ -100,6 +100,13 @@ const ICON = {
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
     </svg>
   ),
+  volumeOff: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <line x1="23" y1="9" x2="17" y2="15" />
+      <line x1="17" y1="9" x2="23" y2="15" />
+    </svg>
+  ),
 };
 
 /* ---------------- Speech recognition (optional, feature-detected) ---------------- */
@@ -162,6 +169,7 @@ export default function AssistantChat({
   const [confirmClear, setConfirmClear] = useState(false);
   const [followUps, setFollowUps] = useState<string[]>([]);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
+  const [ttsMuted, setTtsMuted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<Rec | null>(null);
@@ -480,6 +488,7 @@ export default function AssistantChat({
 
   const speak = (idx: number, text: string) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (ttsMuted) return;
     if (speakingIdx === idx) {
       window.speechSynthesis.cancel();
       setSpeakingIdx(null);
@@ -785,6 +794,23 @@ export default function AssistantChat({
               {ICON.mic}
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              if (ttsMuted) {
+                setTtsMuted(false);
+              } else {
+                window.speechSynthesis?.cancel();
+                setSpeakingIdx(null);
+                setTtsMuted(true);
+              }
+            }}
+            title={ttsMuted ? "Unmute read-aloud" : "Mute read-aloud"}
+            aria-label={ttsMuted ? "Unmute read-aloud" : "Mute read-aloud"}
+            className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 text-muted hover:text-accent-deep hover:bg-soft transition-colors"
+          >
+            {ttsMuted ? ICON.volumeOff : ICON.speaker}
+          </button>
           <button
             onClick={() => send(input)}
             disabled={busy || !input.trim()}
