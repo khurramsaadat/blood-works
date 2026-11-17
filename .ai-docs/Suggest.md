@@ -1,9 +1,13 @@
 # Suggest
 
-3 to 5 immediately implementable UI or UX suggestions based on the most recently completed work (sticky report summary, PWA install prompt, keyboard-first upload, careers form). Approve one with a checkmark and it will be implemented; this list refreshes after each major milestone.
+3 to 5 immediately implementable UI or UX suggestions based on the most recently completed work (Sai read-aloud, auto-read toggle, composer layout). Approve one with a checkmark and it will be implemented; this list refreshes after each major milestone.
 
-1. **Live microphone level in Sai.** With the on-device fallback now recording through MediaRecorder, the mic circle can show real input levels via AudioContext + AnalyserNode, so users trust the permission is working while they speak.
+1. **Pause/resume read-aloud.** The read-aloud button currently stops playback on a second tap. Add a distinct pause state so a long reply can be paused and resumed without restarting from the beginning.
 
-2. **Building your PDF state on the download button.** Generation takes a moment on large panels. Swap the label for a quiet progress state and disable the button while it runs, so a second tap cannot queue a duplicate download and the user never wonders whether the click registered.
+2. **Read-aloud speed control.** Add a small 0.75x / 1x / 1.25x selector next to the volume button so users can pace the narration to their reading speed.
 
-3. **Zoom and rotate in the report preview.** Phone photos of a lab sheet are often sideways and the print is small. Add zoom in / out / reset and a 90-degree rotate control to the lightbox, with pinch-zoom on touch and + / - / 0 keyboard shortcuts on desktop.
+3. **Highlight the sentence being spoken.** As the audio plays, highlight the current sentence in the rendered Markdown reply so the user can follow along visually.
+
+4. **Keyboard shortcut for read-aloud.** Bind `Alt+R` (or `R` when the composer is not focused) to read the latest reply aloud, for hands-free use.
+
+5. **Auto-read default for new users.** Currently auto-read is off by default. Consider defaulting it on for first-time visitors and persisting the choice, with a one-time tooltip explaining the toggle.

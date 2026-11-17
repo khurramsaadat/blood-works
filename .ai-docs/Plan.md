@@ -118,6 +118,14 @@ Stagewise plan for BloodWorks Health (symptom-app). Status legend: done / active
 - No new defects found in this pass; the previous fix set (parser, PDF, preview, mic, imagery, demo cards, sticky, install, paste, careers, swap) stands.
 - Verified in this pass: default tabs per route (`/analyze` → report, `/symptoms` → symptom), hero sample deep-link (`/analyze?sample=lipids`) renders the lipid panel, sticky summary pins at `top: 64px`, PDF omits unevaluated systems, absolute-count normalisation, mic fallback state machine.
 
+## Stage 16: Sai read-aloud (real human voice) – done
+- **No-login TTS.** Added `/api/tts` route using `@andresaya/edge-tts` (Microsoft Edge neural voices). No API key, no user login.
+- **Voice.** Default voice is `en-US-JennyNeural` (American female). Voice selector removed; only Ashley-tested voices evaluated; settled on Jenny as the default free voice.
+- **Read-aloud UX.** Replaced the Web Speech path with Edge TTS audio playback; added visual playing indicator (pulsing dot) so audio state is visible even when muted.
+- **Composer layout.** Mic + volume (read-aloud) stacked in one column; Auto-read toggle stacked above Send; read-aloud button removed from the per-reply action row (always-visible reply actions remain).
+- **Auto-read toggle.** Opt-in "Auto-read" (AR) plays each new Sai reply automatically; persisted in `localStorage` (`bw.tts.autoread`).
+- Verified: `/api/tts` returns 200 `audio/mpeg`; read-aloud plays with the ping indicator; `tsc --noEmit` clean; `pnpm build` 15/15 routes.
+
 ## Cleanup queue
 - No leftover `ocr-*.mjs`, `ocr-*.txt`, `verify-*.mjs` or `eng.traineddata` in the repo. Removed in Stage 10.
 - `scripts/make-icons.ps1` is the documented icon regeneration tool; keep it.

@@ -61,3 +61,15 @@ Chronological record of every owner input and prompt that shaped this project. N
 - Never push to GitHub without explicit permission; re-seek approval for each push.
 - No em-dashes for sentence pauses; use the spaced en-dash ( – ). Hyphens only for compound words.
 - Keep the `.ai-docs` folder (PRD.md, Plan.md, Suggest.md, input.md) updated from start to finish.
+
+## Phase 8: Sai read-aloud voice
+- Read-aloud should use a real human voice (American female), not a computerized one; research and implement.
+- Mic and volume icons should be stacked (mic up, volume down) in one column.
+- Volume/mute icon added next to the mic; show visually when audio is playing even if muted.
+- The "Reply:" action row under Sai replies should always be visible, not only on hover.
+- "Ask Sai" input field should be bigger / auto-grow.
+- When Sai provides a response, it should be read aloud (opt-in toggle preferred over always-on).
+- Selecting a voice should play it (preview); remove the voice selector and use a single voice (Ashley) by default.
+- Move the "Auto-read off" toggle above the Send button; change label to "Auto-read off"/"Auto-read on".
+- Remove the read-aloud button from next to Share/Download; keep only the composer read-aloud button.
+- Edge TTS (`en-US-JennyNeural`) chosen as the free, no-login real voice; Ashley is Azure-only.
