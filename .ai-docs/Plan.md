@@ -113,6 +113,11 @@ Stagewise plan for BloodWorks Health (symptom-app). Status legend: done / active
 - **PDF no longer prints unevaluated systems.** Systems with no values on the source report are omitted from the systems page instead of a fake "NOT EVALUATED" box; an editorial note states which systems were left out.
 - **Absolute-count normalisation.** Values reported as absolute counts (WBC/platelets in absolute count form) are scaled to thousands so `11,600` reads as `11.6` instead of failing range checks.
 
+## Stage 15: Full app bug review – done
+- Swept every route (`/`, `/analyze`, `/symptoms`, `/how-it-works`, `/faq`, `/careers`, `/privacy`, `/terms`, `/sitemap`, 404) in the browser: zero console errors, zero horizontal overflow on any page, FAQ accordion, lightbox (Esc / click-outside / scroll lock), tabs, symptom flow, Sai send flow, back-to-top, theme toggle, careers form, paste upload, install prompt, sticky summary all verified working.
+- No new defects found in this pass; the previous fix set (parser, PDF, preview, mic, imagery, demo cards, sticky, install, paste, careers, swap) stands.
+- Verified in this pass: default tabs per route (`/analyze` → report, `/symptoms` → symptom), hero sample deep-link (`/analyze?sample=lipids`) renders the lipid panel, sticky summary pins at `top: 64px`, PDF omits unevaluated systems, absolute-count normalisation, mic fallback state machine.
+
 ## Cleanup queue
 - No leftover `ocr-*.mjs`, `ocr-*.txt`, `verify-*.mjs` or `eng.traineddata` in the repo. Removed in Stage 10.
 - `scripts/make-icons.ps1` is the documented icon regeneration tool; keep it.
