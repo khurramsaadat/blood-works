@@ -1,7 +1,16 @@
 import { EdgeTTS } from "@andresaya/edge-tts";
 
+const ALLOWED_VOICES = [
+  "en-US-AriaNeural",
+  "en-US-JennyNeural",
+  "en-US-EmmaNeural",
+  "en-US-AvaNeural",
+  "en-US-MichelleNeural",
+  "en-US-AnaNeural",
+];
+
 export async function POST(request: Request) {
-  let body: { text?: string };
+  let body: { text?: string; voice?: string };
   try {
     body = await request.json();
   } catch {
@@ -14,10 +23,11 @@ export async function POST(request: Request) {
   if (text.length > 3000) {
     return Response.json({ error: "Text too long." }, { status: 400 });
   }
+  const voice = ALLOWED_VOICES.includes(body.voice ?? "") ? (body.voice as string) : "en-US-AriaNeural";
 
   try {
     const tts = new EdgeTTS();
-    await tts.synthesize(text, "en-US-AshleyNeural");
+    await tts.synthesize(text, voice);
     const buffer = tts.toBuffer();
     return new Response(new Uint8Array(buffer), {
       status: 200,

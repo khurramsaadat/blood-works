@@ -170,6 +170,7 @@ export default function AssistantChat({
   const [followUps, setFollowUps] = useState<string[]>([]);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
   const [ttsLoading, setTtsLoading] = useState(false);
+  const [ttsVoice, setTtsVoice] = useState("en-US-AriaNeural");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [ttsMuted, setTtsMuted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -185,6 +186,15 @@ export default function AssistantChat({
   const micModeRef = useRef<"speech" | "local">("speech");
   const ctxRef = useRef(context);
   ctxRef.current = context;
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("bw.tts.voice");
+      if (v) setTtsVoice(v);
+    } catch {
+      /* storage blocked */
+    }
+  }, []);
   const nearBottomRef = useRef(true);
 
   // Feature-detect on mount only, so the server and first client render match
@@ -501,7 +511,7 @@ export default function AssistantChat({
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: clean, voice: 'en-US-AshleyNeural' }),
+        body: JSON.stringify({ text: clean, voice: ttsVoice }),
       });
       if (!res.ok) throw new Error('TTS request failed');
       const blob = await res.blob();
@@ -827,17 +837,22 @@ export default function AssistantChat({
             Send
           </button>
         </div>
-        <div className="mt-1.5 flex items-center gap-2 px-1">
-          <span className="text-[10px] text-muted">Voice: Ashley (American female)</span>
-          <a
-            href="https://speech.microsoft.com/portal/voicegallery"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[10px] text-muted hover:text-accent-deep underline"
+          <select
+            id="sai-voice"
+            value={ttsVoice}
+            onChange={(e) => {
+              setTtsVoice(e.target.value);
+              try { localStorage.setItem("bw.tts.voice", e.target.value); } catch { /* storage blocked */ }
+            }}
+            className="text-[10px] rounded-md border border-border-c bg-background px-2 py-1 text-muted focus:outline-none focus:border-accent"
           >
-            Explore more voices
-          </a>
-        </div>
+            <option value="en-US-AriaNeural">Aria (American female)</option>
+            <option value="en-US-JennyNeural">Jenny (American female)</option>
+            <option value="en-US-EmmaNeural">Emma (American female)</option>
+            <option value="en-US-AvaNeural">Ava (American female)</option>
+            <option value="en-US-MichelleNeural">Michelle (American female)</option>
+            <option value="en-US-AnaNeural">Ana (American female)</option>
+          </select>
         <p className="text-[10px] text-muted mt-1.5 px-1">
           {localStage === "recording"
             ? "Recording on this device – speak, then tap the mic to stop"
