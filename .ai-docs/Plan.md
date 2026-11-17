@@ -81,6 +81,7 @@ Stagewise plan for BloodWorks Health (symptom-app). Status legend: done / active
 - PWA install prompt after a completed analysis, dismissible for 30 days via localStorage (new `site/install-prompt.tsx`).
 - Ctrl/Cmd+V image upload on `/analyze`, excluding the Sai panel (document-level paste handler with `data-sai-panel` skip).
 - Careers application form with three fields and a pre-addressed mailto.
+- Sticky summary and install prompt positions swapped: install prompt now sits above the tabs, sticky summary below the upload card; sticky behaviour re-verified (`top: 64px` while scrolled).
 - Hybrid AI vision fallback for unreadable images, opt-in only.
 
 ## Stage 12: Full app bug review – done
